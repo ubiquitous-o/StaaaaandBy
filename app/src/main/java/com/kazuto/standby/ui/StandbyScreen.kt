@@ -1,0 +1,382 @@
+package com.kazuto.standby.ui
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.Bitmap
+import android.os.BatteryManager
+import android.os.SystemClock
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.kazuto.standby.R
+import com.kazuto.standby.media.MediaSessionWatcher
+import com.kazuto.standby.media.NowPlaying
+import kotlinx.coroutines.delay
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.roundToInt
+
+private val ScreenBg = Color.Black
+private val TextPrimary = Color(0xFFF2F3F5)
+private val AccentGreen = Color(0xFF57D98A)
+
+private val OverlayShadow = Shadow(
+    color = Color.Black.copy(alpha = 0.75f),
+    offset = Offset(0f, 3f),
+    blurRadius = 16f
+)
+
+// 曲情報用: 小さい文字でも輪郭が立つ、近くて濃い影
+private val TrackShadow = Shadow(
+    color = Color.Black.copy(alpha = 0.9f),
+    offset = Offset(0f, 2f),
+    blurRadius = 8f
+)
+
+// 時刻用: 等幅フォント。字幅が揃うので時刻が変わっても位置がブレない
+// Fira Code は可変フォントなので wght=700 を指定して Bold として使う
+@OptIn(ExperimentalTextApi::class)
+private val TimeFontFamily = FontFamily(
+    Font(
+        R.font.fira_code,
+        weight = FontWeight.Bold,
+        variationSettings = FontVariation.Settings(FontVariation.weight(700)),
+    )
+)
+
+// 日付・バッテリー用: 時計と同じ Fira Code の Medium 相当
+@OptIn(ExperimentalTextApi::class)
+private val LabelFontFamily = FontFamily(
+    Font(
+        R.font.fira_code,
+        weight = FontWeight.Medium,
+        variationSettings = FontVariation.Settings(FontVariation.weight(500)),
+    )
+)
+
+@Composable
+fun StandbyScreen(mediaWatcher: MediaSessionWatcher) {
+    val now by rememberCurrentTime()
+    val battery by rememberBatteryStatus()
+    val nowPlaying by mediaWatcher.nowPlaying.collectAsState()
+
+    // 有機ELの焼き付き対策: 毎分すこしだけ時計の位置をずらす。
+    // 一瞬で跳ぶと目につくので、30秒かけてゆっくり漂わせる(見た目はほぼ静止)
+    val burnInShift = tween<androidx.compose.ui.unit.Dp>(
+        durationMillis = 30_000, easing = LinearEasing
+    )
+    val shiftX by animateDpAsState(
+        targetValue = ((now.minute * 7) % 17 - 8).dp,
+        animationSpec = burnInShift,
+        label = "burnInShiftX"
+    )
+    val shiftY by animateDpAsState(
+        targetValue = ((now.minute * 11) % 13 - 6).dp,
+        animationSpec = burnInShift,
+        label = "burnInShiftY"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ScreenBg)
+            // 画面3分割タップ: 左=前の曲 / 中央=再生停止 / 右=次の曲
+            .pointerInput(mediaWatcher) {
+                detectTapGestures { offset ->
+                    val third = size.width / 3f
+                    when {
+                        offset.x < third -> mediaWatcher.skipToPrevious()
+                        offset.x > third * 2 -> mediaWatcher.skipToNext()
+                        else -> mediaWatcher.playPause()
+                    }
+                }
+            }
+    ) {
+        val playing = nowPlaying
+        val art = playing?.albumArt
+        if (art != null) {
+            // 毎フレーム再生位置を計算してスリットを滑らかに動かす。
+            // 一時停止中は値が変わらないので再描画も起きない。
+            val progress by produceState(initialValue = 0f, playing) {
+                while (true) {
+                    withFrameMillis {
+                        value = playing?.progressAt(SystemClock.elapsedRealtime()) ?: 0f
+                    }
+                }
+            }
+            SlitScanArtwork(
+                art = art,
+                progress = progress,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        ClockOverlay(
+            now = now,
+            battery = battery,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(x = shiftX, y = shiftY)
+        )
+        playing?.let { p ->
+            TrackInfo(
+                playing = p,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 36.dp, bottom = 30.dp)
+                    .offset(x = shiftX, y = shiftY)
+            )
+        }
+    }
+}
+
+/** 左下のターミナル風「再生中」表示。長い文字列は領域内でマーキースクロールする。 */
+@Composable
+private fun TrackInfo(playing: NowPlaying, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxWidth(0.62f)) {
+        MarqueeText(
+            text = playing.title.uppercase(Locale.ENGLISH),
+            style = TextStyle(
+                color = TextPrimary,
+                fontFamily = LabelFontFamily,
+                fontWeight = FontWeight.Medium,
+                fontSize = 24.sp,
+                letterSpacing = 1.sp,
+                shadow = TrackShadow
+            )
+        )
+        MarqueeText(
+            text = playing.artist.uppercase(Locale.ENGLISH),
+            style = TextStyle(
+                color = TextPrimary,
+                fontFamily = LabelFontFamily,
+                fontWeight = FontWeight.Medium,
+                fontSize = 18.sp,
+                letterSpacing = 1.sp,
+                shadow = TrackShadow
+            )
+        )
+    }
+}
+
+/**
+ * 影が切れないマーキー。basicMarquee は自分の枠でクリップするので、
+ * 内側に余白を挟んで影のにじみぶんの逃げ場を作る。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MarqueeText(text: String, style: TextStyle, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.basicMarquee(
+            iterations = Int.MAX_VALUE,
+            repeatDelayMillis = 2_000,
+            initialDelayMillis = 2_000,
+        )
+    ) {
+        Text(
+            text = text,
+            style = style,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+        )
+    }
+}
+
+/**
+ * 正方形のアートワークを高さいっぱいに描き、再生位置に対応する縦1列を
+ * 横に引き伸ばして(スリットスキャン)、画面の余り幅を埋める。
+ * 引き伸ばし幅 = 画面幅 - 画面高さ で、画面サイズに自動追従する。
+ */
+@Composable
+private fun SlitScanArtwork(art: Bitmap, progress: Float, modifier: Modifier = Modifier) {
+    val image: ImageBitmap = remember(art) { art.asImageBitmap() }
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val srcW = image.width
+        val srcH = image.height
+        if (srcW <= 0 || srcH <= 0) return@Canvas
+
+        if (w <= h) {
+            // 縦長・正方形画面ではスリット不要。中央クロップでカバー表示
+            val targetAspect = w / h
+            val cropW = (srcH * targetAspect).coerceAtMost(srcW.toFloat())
+            val cropX = (srcW - cropW) / 2f
+            drawImage(
+                image = image,
+                srcOffset = IntOffset(cropX.roundToInt(), 0),
+                srcSize = IntSize(cropW.roundToInt().coerceAtLeast(1), srcH),
+                dstOffset = IntOffset.Zero,
+                dstSize = IntSize(w.roundToInt(), h.roundToInt())
+            )
+            return@Canvas
+        }
+
+        // すべてfloatで計算し、クリップ+変換で描くことでサブピクセル単位で滑らかに動かす
+        val srcWf = srcW.toFloat()
+        val srcHf = srcH.toFloat()
+        val artDstW = h                          // 正方形アートの表示幅(高さいっぱい)
+        val slitDstW = w - artDstW               // スリットで埋める幅
+        val slitSrcX = progress * (srcWf - 1f)   // 引き伸ばす縦1列の位置
+        val leftDstW = progress * artDstW        // スリットより左の表示幅
+        val sy = h / srcHf
+
+        // スリットより左の部分: src[0..slitSrcX] → dst[0..leftDstW]
+        if (leftDstW > 0.5f && slitSrcX > 0.5f) {
+            clipRect(0f, 0f, leftDstW, h) {
+                scale(scaleX = leftDstW / slitSrcX, scaleY = sy, pivot = Offset.Zero) {
+                    drawImage(image)
+                }
+            }
+        }
+        // 再生位置の縦1列を横に引き伸ばす: src[slitSrcX..slitSrcX+1] → dst[leftDstW..leftDstW+slitDstW]
+        clipRect(leftDstW, 0f, leftDstW + slitDstW, h) {
+            translate(left = leftDstW - slitSrcX * slitDstW) {
+                scale(scaleX = slitDstW, scaleY = sy, pivot = Offset.Zero) {
+                    drawImage(image)
+                }
+            }
+        }
+        // スリットより右の部分: src[slitSrcX..srcW] → dst[leftDstW+slitDstW..w]
+        val rightDstW = w - leftDstW - slitDstW
+        if (rightDstW > 0.5f && srcWf - slitSrcX > 0.5f) {
+            val sx = rightDstW / (srcWf - slitSrcX)
+            clipRect(leftDstW + slitDstW, 0f, w, h) {
+                translate(left = leftDstW + slitDstW - slitSrcX * sx) {
+                    scale(scaleX = sx, scaleY = sy, pivot = Offset.Zero) {
+                        drawImage(image)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClockOverlay(
+    now: LocalDateTime,
+    battery: BatteryStatus,
+    modifier: Modifier = Modifier
+) {
+    val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH) }
+
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = now.format(timeFormatter),
+            style = TextStyle(
+                color = TextPrimary,
+                fontFamily = TimeFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 120.sp,
+                shadow = OverlayShadow
+            ),
+            maxLines = 1,
+            softWrap = false
+        )
+        Text(
+            text = now.format(dateFormatter).uppercase(Locale.ENGLISH),
+            style = TextStyle(
+                color = TextPrimary.copy(alpha = 0.85f),
+                fontFamily = LabelFontFamily,
+                fontWeight = FontWeight.Medium,
+                fontSize = 24.sp,
+                letterSpacing = 4.sp,
+                shadow = OverlayShadow
+            )
+        )
+        Text(
+            text = if (battery.isCharging) "⚡ ${battery.level}%" else "${battery.level}%",
+            style = TextStyle(
+                color = if (battery.isCharging) AccentGreen else TextPrimary.copy(alpha = 0.7f),
+                fontFamily = LabelFontFamily,
+                fontWeight = FontWeight.Medium,
+                fontSize = 18.sp,
+                shadow = OverlayShadow
+            ),
+            modifier = Modifier.padding(top = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun rememberCurrentTime(): State<LocalDateTime> =
+    produceState(initialValue = LocalDateTime.now()) {
+        while (true) {
+            value = LocalDateTime.now()
+            // 毎秒更新: 時計と、スリットの再生位置追従の両方に使う
+            delay(1_000 - System.currentTimeMillis() % 1_000)
+        }
+    }
+
+data class BatteryStatus(val level: Int, val isCharging: Boolean)
+
+@Composable
+private fun rememberBatteryStatus(): State<BatteryStatus> {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val status = remember { mutableStateOf(BatteryStatus(level = 0, isCharging = true)) }
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
+                if (level >= 0 && scale > 0) {
+                    status.value = BatteryStatus(
+                        level = level * 100 / scale,
+                        isCharging = plugged != 0
+                    )
+                }
+            }
+        }
+        // ACTION_BATTERY_CHANGED は sticky なので登録直後に現在値が届く
+        context.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    return status
+}
