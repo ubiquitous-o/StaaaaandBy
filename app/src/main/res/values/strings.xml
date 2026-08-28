@@ -9,11 +9,11 @@
     <string name="step_notification_button">Open notification access settings</string>
 
     <string name="step_overlay_title">Allow display over other apps</string>
-    <string name="step_overlay_desc">This lets StandBy appear when you place your phone on a wireless charger, or press the side key while charging.</string>
+    <string name="step_overlay_desc">This lets StaaaaandBy appear when you place your phone on a wireless charger, or press the side key while charging.</string>
     <string name="step_overlay_button">Open display settings</string>
 
     <string name="status_done">✓ All set</string>
     <string name="status_todo">Not yet</string>
 
-    <string name="setup_footer">That\'s it! Place your phone on a wireless charger and StandBy will appear. Pressing the side key while charging works too.</string>
+    <string name="setup_footer">That\'s it! Place your phone on a wireless charger and StaaaaandBy will appear. Pressing the side key while charging works too.</string>
 </resources>
