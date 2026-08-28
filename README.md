@@ -1,4 +1,4 @@
-# StaaaaanBy
+# StaaaaandBy
 
 An Android app inspired by the iPhone's StandBy mode. While charging on a Qi pad, it shows a clock and the artwork of the currently playing track on top of the lock screen.
 
@@ -21,21 +21,34 @@ An Android app inspired by the iPhone's StandBy mode. While charging on a Qi pad
 - On launch, the first portrait frame is masked in black, then the UI fades in over 700 ms once the screen is landscape
 - The setup screen (MainActivity) uses string resources and supports Japanese and English
 
+## Install
+
+1. Download the latest APK from [Releases](https://github.com/ubiquitous-o/StaaaaandBy/releases)
+2. Open the APK on your phone. You may need to allow "Install unknown apps" for your browser or file manager, and Play Protect may show a warning for apps from unknown developers — that's expected for sideloaded apps
+3. Follow the two setup steps shown in the app (below)
+
+Only tested on a Galaxy Z Flip 7 (One UI). Other OEMs (especially Xiaomi/OPPO) restrict background activity launches more aggressively and may need extra battery/autostart settings — reports welcome.
+
 ## Setup (on the device)
 
 1. Grant notification access (needed for the music display; skip it if you only want the clock)
 2. Grant "Display over other apps" (required to launch the standby screen)
 3. Place the phone on a Qi charging pad. Pressing the side key to turn the screen off while charging also brings up the standby screen
 
-Note: if the persistent service gets killed on Samsung devices, set Settings → Apps → StaaaaanBy → Battery → Unrestricted.
+Note: if the persistent service gets killed on Samsung devices, set Settings → Apps → StaaaaandBy → Battery → Unrestricted.
+
+## Privacy
+
+Everything stays on your device. Notification access is used solely to read the media sessions of music apps (title, artist, artwork, playback state) — notifications themselves are never read or stored. The INTERNET permission is used only to fetch album artwork. Nothing is collected or sent anywhere.
 
 ## Build
 
 - Requires JDK 17 and the Android SDK (compileSdk 35). `org.gradle.java.home` in `gradle.properties` points to Homebrew's `openjdk@17`
 - `./gradlew :app:assembleDebug`
 
-## License notes
+## License
 
+- Code: [MIT](LICENSE)
 - The bundled [Fira Code](https://github.com/tonsky/FiraCode) font is licensed under the SIL Open Font License 1.1 — see [licenses/FiraCode-OFL.txt](licenses/FiraCode-OFL.txt)
 
 ## Structure

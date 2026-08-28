@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">StaaaaanBy</string>
+    <string name="app_name">StaaaaandBy</string>
 
-    <string name="setup_intro">While charging wirelessly, StandBy fills your screen with a clock and the music you\'re playing. Just two quick steps to get ready.</string>
+    <string name="setup_intro">While charging wirelessly, StaaaaandBy fills your screen with a clock and the music you\'re playing. Just two quick steps to get ready.</string>
 
     <string name="step_notification_title">Allow notification access</string>
-    <string name="step_notification_desc">This lets StandBy read the title and artwork of the song you\'re playing. Feel free to skip it — the clock works just fine on its own.</string>
+    <string name="step_notification_desc">This lets StaaaaandBy read the title and artwork of the song you\'re playing. Feel free to skip it — the clock works just fine on its own.</string>
     <string name="step_notification_button">Open notification access settings</string>
 
     <string name="step_overlay_title">Allow display over other apps</string>
