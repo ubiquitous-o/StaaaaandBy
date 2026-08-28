@@ -33,6 +33,10 @@ Note: if the persistent service gets killed on Samsung devices, set Settings →
 - Requires JDK 17 and the Android SDK (compileSdk 35). `org.gradle.java.home` in `gradle.properties` points to Homebrew's `openjdk@17`
 - `./gradlew :app:assembleDebug`
 
+## License notes
+
+- The bundled [Fira Code](https://github.com/tonsky/FiraCode) font is licensed under the SIL Open Font License 1.1 — see [licenses/FiraCode-OFL.txt](licenses/FiraCode-OFL.txt)
+
 ## Structure
 
 ```
