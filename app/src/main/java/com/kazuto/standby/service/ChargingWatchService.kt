@@ -9,6 +9,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.BatteryManager
 import android.os.Handler
 import android.os.IBinder
@@ -20,6 +24,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.kazuto.standby.R
 import com.kazuto.standby.StandbyActivity
+import kotlin.math.abs
 
 /**
  * 充電・画面状態を常駐監視して、条件が揃ったら StandbyActivity を起動する。
@@ -57,6 +62,8 @@ class ChargingWatchService : Service() {
                     if (sinceVisible < 3_000) return
                     maybeLaunch(delayMs = 500)
                 }
+                Intent.ACTION_SCREEN_ON -> stopOrientationWatch()
+                Intent.ACTION_POWER_DISCONNECTED -> stopOrientationWatch()
             }
         }
     }
@@ -66,7 +73,9 @@ class ChargingWatchService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification())
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
         }
         registerReceiver(receiver, filter)
     }
@@ -74,6 +83,7 @@ class ChargingWatchService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        stopOrientationWatch()
         unregisterReceiver(receiver)
         super.onDestroy()
     }
@@ -91,11 +101,72 @@ class ChargingWatchService : Service() {
             if (isScreenOn() && !shouldRecoverFromChargingPause()) {
                 return@postDelayed
             }
-            startActivity(
-                Intent(this, StandbyActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+            startOrientationWatch()
         }, delayMs)
+    }
+
+    private var orientationListener: SensorEventListener? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    /**
+     * Qi充電中+画面オフの間、加速度センサーを監視して、端末が物理的に横向き
+     * (重力がX軸=短辺方向に優勢)になった瞬間にスタンバイを起動する。
+     * 縦置き(Y軸優勢)や平置き(Z軸優勢)のままなら起動せず監視を続ける。
+     * 充電が外れる・画面がつくと監視をやめる。
+     * 画面オフ中もセンサーイベントが届くよう部分ウェイクロックを持つ(充電中のみ、上限1時間)。
+     */
+    private fun startOrientationWatch() {
+        if (orientationListener != null) return
+        val sensorManager = getSystemService(SensorManager::class.java)
+        val sensor = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (sensorManager == null || sensor == null) {
+            // センサーが無い端末では向き判定を諦めて従来通り起動する
+            launchStandby()
+            return
+        }
+        wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "StaaaaandBy:orientationWatch")
+            .apply {
+                setReferenceCounted(false)
+                acquire(60 * 60 * 1000L)
+            }
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                if (!isWirelessCharging() ||
+                    (isScreenOn() && !shouldRecoverFromChargingPause())
+                ) {
+                    stopOrientationWatch()
+                    return
+                }
+                val x = event.values[0]
+                val y = event.values[1]
+                val z = event.values[2]
+                if (abs(x) > abs(y) && abs(x) > abs(z)) {
+                    stopOrientationWatch()
+                    launchStandby()
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        orientationListener = listener
+        sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+    }
+
+    private fun stopOrientationWatch() {
+        orientationListener?.let {
+            getSystemService(SensorManager::class.java)?.unregisterListener(it)
+        }
+        orientationListener = null
+        wakeLock?.release()
+        wakeLock = null
+    }
+
+    private fun launchStandby() {
+        startActivity(
+            Intent(this, StandbyActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 
     private fun shouldRecoverFromChargingPause(): Boolean {

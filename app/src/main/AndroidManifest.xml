@@ -8,6 +8,8 @@
     <!-- バックグラウンドからロック画面上にActivityを出すために必要 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 充電中の向き監視でセンサーイベントを受け続けるため -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
