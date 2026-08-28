@@ -76,6 +76,25 @@ class MediaSessionWatcher(private val context: Context) {
             attach(controllers.orEmpty())
         }
 
+    companion object {
+        /**
+         * スタンバイに表示するのは音楽アプリのみ。
+         * YouTube等の動画アプリもMediaSessionを持つが、対象にしない。
+         */
+        private val MUSIC_APP_PACKAGES = setOf(
+            "com.spotify.music",                      // Spotify
+            "com.google.android.apps.youtube.music",  // YouTube Music
+            "com.apple.android.music",                // Apple Music
+            "com.amazon.mp3",                         // Amazon Music
+            "jp.linecorp.linemusic.android",          // LINE MUSIC
+            "fm.awa.liverpool",                       // AWA
+            "com.aspiro.tidal",                       // TIDAL
+            "com.soundcloud.android",                 // SoundCloud
+            "deezer.android.app",                     // Deezer
+            "com.sec.android.app.music",              // Samsung Music
+        )
+    }
+
     fun start() {
         try {
             sessionManager.addOnActiveSessionsChangedListener(sessionsListener, listenerComponent)
@@ -123,7 +142,7 @@ class MediaSessionWatcher(private val context: Context) {
 
     private fun attach(controllers: List<MediaController>) {
         controller?.unregisterCallback(controllerCallback)
-        controller = pickBest(controllers)
+        controller = pickBest(controllers.filter { it.packageName in MUSIC_APP_PACKAGES })
         controller?.registerCallback(controllerCallback)
         publish()
     }
