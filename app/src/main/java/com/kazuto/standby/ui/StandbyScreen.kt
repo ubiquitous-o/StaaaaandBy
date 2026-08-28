@@ -7,9 +7,6 @@ import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.os.BatteryManager
 import android.os.SystemClock
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -19,7 +16,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -105,22 +101,6 @@ fun StandbyScreen(mediaWatcher: MediaSessionWatcher) {
     val battery by rememberBatteryStatus()
     val nowPlaying by mediaWatcher.nowPlaying.collectAsState()
 
-    // 有機ELの焼き付き対策: 毎分すこしだけ時計の位置をずらす。
-    // 一瞬で跳ぶと目につくので、30秒かけてゆっくり漂わせる(見た目はほぼ静止)
-    val burnInShift = tween<androidx.compose.ui.unit.Dp>(
-        durationMillis = 30_000, easing = LinearEasing
-    )
-    val shiftX by animateDpAsState(
-        targetValue = ((now.minute * 7) % 17 - 8).dp,
-        animationSpec = burnInShift,
-        label = "burnInShiftX"
-    )
-    val shiftY by animateDpAsState(
-        targetValue = ((now.minute * 11) % 13 - 6).dp,
-        animationSpec = burnInShift,
-        label = "burnInShiftY"
-    )
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -158,9 +138,7 @@ fun StandbyScreen(mediaWatcher: MediaSessionWatcher) {
         ClockOverlay(
             now = now,
             battery = battery,
-            modifier = Modifier
-                .align(Alignment.Center)
-                .offset(x = shiftX, y = shiftY)
+            modifier = Modifier.align(Alignment.Center)
         )
         playing?.let { p ->
             TrackInfo(
@@ -168,7 +146,6 @@ fun StandbyScreen(mediaWatcher: MediaSessionWatcher) {
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(start = 36.dp, bottom = 30.dp)
-                    .offset(x = shiftX, y = shiftY)
             )
         }
     }

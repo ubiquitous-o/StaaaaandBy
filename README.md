@@ -2,6 +2,8 @@
 
 An Android app inspired by the iPhone's StandBy mode. While charging on a Qi pad, it shows a clock and the artwork of the currently playing track on top of the lock screen.
 
+![Demo](docs/demo.gif)
+
 ## How it works
 
 - **ChargingWatchService** (a persistent foreground service) watches for "power connected" and "screen off" events. When the phone is wirelessly (Qi) charging and the screen is off, it launches **StandbyActivity** on top of the lock screen (`showWhenLocked` + `turnScreenOn`). The "Display over other apps" permission (SYSTEM_ALERT_WINDOW) grants the background activity launch
@@ -16,7 +18,6 @@ An Android app inspired by the iPhone's StandBy mode. While charging on a Qi pad
 - Invisible tap zones split the screen in three: left = previous track / center = play–pause / right = next track
 - Clock, date, and battery are overlaid on the artwork with drop shadows. The typeface is **Fira Code** (variable font, Bold for the clock / Medium for labels), and the date is shown in English (`THU, AUG 28`)
 - Track title and artist appear in the bottom left. Long strings marquee-scroll within their area (clipped with padding so the shadows don't get cut off)
-- As OLED burn-in protection, the clock position drifts a few dp every minute, eased over 30 seconds
 - On launch, the first portrait frame is masked in black, then the UI fades in over 700 ms once the screen is landscape
 - The setup screen (MainActivity) uses string resources and supports Japanese and English
 
