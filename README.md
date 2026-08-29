@@ -19,13 +19,13 @@ An Android app inspired by the iPhone's StandBy mode. While charging on a Qi pad
 - Clock, date, and battery are overlaid on the artwork with drop shadows. The typeface is **Fira Code** (variable font, Bold for the clock / Medium for labels), and the date is shown in English (`THU, AUG 28`)
 - Track title and artist appear in the bottom left. Long strings marquee-scroll within their area (clipped with padding so the shadows don't get cut off)
 - On launch, the first portrait frame is masked in black, then the UI fades in over 700 ms once the screen is landscape
-- The setup screen (MainActivity) uses string resources and supports Japanese and English
+- The setup screen (MainActivity) uses string resources and supports Japanese and English. It also lists installed music apps and lets you exempt them from battery optimization with one tap (see Setup)
 
 ## Install
 
 1. Download the latest APK from [Releases](https://github.com/ubiquitous-o/StaaaaandBy/releases)
 2. Open the APK on your phone. You may need to allow "Install unknown apps" for your browser or file manager, and Play Protect may show a warning for apps from unknown developers — that's expected for sideloaded apps
-3. Follow the two setup steps shown in the app (below)
+3. Follow the three setup steps shown in the app (below)
 
 Only tested on a Galaxy Z Flip 7 (One UI). Other OEMs (especially Xiaomi/OPPO) restrict background activity launches more aggressively and may need extra battery/autostart settings — reports welcome.
 
@@ -33,9 +33,16 @@ Only tested on a Galaxy Z Flip 7 (One UI). Other OEMs (especially Xiaomi/OPPO) r
 
 1. Grant notification access (needed for the music display; skip it if you only want the clock)
 2. Grant "Display over other apps" (required to launch the standby screen)
-3. Place the phone on a Qi charging pad. Pressing the side key to turn the screen off while charging also brings up the standby screen
+3. Keep your music apps awake — see below
+4. Place the phone on a Qi charging pad. Pressing the side key to turn the screen off while charging also brings up the standby screen
 
 Note: if the persistent service gets killed on Samsung devices, set Settings → Apps → StaaaaandBy → Battery → Unrestricted.
+
+### Keeping music apps awake (remote playback)
+
+If you play music on another device — e.g. Spotify on your Mac with Spotify Connect — the phone's Spotify app mirrors that playback into a MediaSession, and that's what StaaaaandBy displays. The catch: while mirroring, the phone's Spotify app isn't playing audio locally, so Android treats it as an idle background app and may kill it to reclaim memory. When that happens the mirror is gone and the artwork stops updating even though the music keeps playing on the other device.
+
+The third setup step lists the supported music apps installed on the phone, shows whether each one is exempt from battery optimization, and opens its app settings with one tap. For each app, choose **Battery → Unrestricted**. This applies to any music app, not just Spotify. It makes the kill much less likely, though a true low-memory situation can still take the app down — reopening the music app restores the display.
 
 ## Privacy
 
@@ -55,7 +62,7 @@ Everything stays on your device. Notification access is used solely to read the 
 
 ```
 app/src/main/java/com/kazuto/standby/
-├── MainActivity.kt                     # Setup screen (notification access / overlay permission)
+├── MainActivity.kt                     # Setup screen (notification access / overlay permission / music app battery)
 ├── StandbyActivity.kt                  # The standby screen shown over the lock screen
 ├── service/ChargingWatchService.kt     # Persistent charging/screen watcher → launches StandbyActivity
 ├── service/BootReceiver.kt             # Restarts the service after reboot

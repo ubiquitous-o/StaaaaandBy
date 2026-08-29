@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="setup_intro">ワイヤレス充電中に、時計と再生中の音楽を画面いっぱいに映すアプリです。準備は2つだけ。</string>
+    <string name="setup_intro">ワイヤレス充電中に、時計と再生中の音楽を画面いっぱいに映すアプリです。準備は3つだけ。</string>
 
     <string name="step_notification_title">通知へのアクセスを許可</string>
     <string name="step_notification_desc">再生中の曲名やジャケットを読み取るために使います。許可しなくても、時計だけでちゃんと動きます。</string>
@@ -9,6 +9,11 @@
     <string name="step_overlay_title">他のアプリの上に表示を許可</string>
     <string name="step_overlay_desc">Qi充電器に置いたときや、充電中にサイドキーを押したときに、スタンバイ画面を出すために必要です。</string>
     <string name="step_overlay_button">表示の設定を開く</string>
+
+    <string name="step_battery_title">音楽アプリを眠らせない</string>
+    <string name="step_battery_desc">Androidはメモリ節約のために音楽アプリを眠らせることがあり、そうなると他の端末（MacのSpotifyなど）で再生中の曲が表示されなくなります。下の音楽アプリごとに設定を開き、「バッテリー」→「制限なし」を選んでください。</string>
+    <string name="step_battery_button">アプリの設定を開く</string>
+    <string name="step_battery_none">対応する音楽アプリが見つかりませんでした。SpotifyやYouTube Musicなどをインストールすると、ここに表示されます。</string>
 
     <string name="status_done">✓ 設定できました</string>
     <string name="status_todo">これから</string>

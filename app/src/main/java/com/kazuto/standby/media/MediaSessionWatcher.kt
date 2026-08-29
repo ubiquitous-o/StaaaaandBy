@@ -81,7 +81,7 @@ class MediaSessionWatcher(private val context: Context) {
          * スタンバイに表示するのは音楽アプリのみ。
          * YouTube等の動画アプリもMediaSessionを持つが、対象にしない。
          */
-        private val MUSIC_APP_PACKAGES = setOf(
+        val MUSIC_APP_PACKAGES = setOf(
             "com.spotify.music",                      // Spotify
             "com.google.android.apps.youtube.music",  // YouTube Music
             "com.apple.android.music",                // Apple Music

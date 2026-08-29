@@ -1,8 +1,10 @@
 package com.kazuto.standby
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -41,6 +43,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.kazuto.standby.media.MediaSessionWatcher
 import com.kazuto.standby.service.ChargingWatchService
 
 class MainActivity : ComponentActivity() {
@@ -67,6 +70,7 @@ private fun SetupScreen() {
 
     var notifGranted by remember { mutableStateOf(notificationAccessGranted()) }
     var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var musicApps by remember { mutableStateOf(loadInstalledMusicApps(context)) }
 
     // 設定アプリから戻ってきたタイミングで状態を取り直す
     DisposableEffect(lifecycleOwner) {
@@ -74,6 +78,7 @@ private fun SetupScreen() {
             if (event == Lifecycle.Event.ON_RESUME) {
                 notifGranted = notificationAccessGranted()
                 overlayGranted = Settings.canDrawOverlays(context)
+                musicApps = loadInstalledMusicApps(context)
                 if (overlayGranted) {
                     // 権限が揃っていたら監視サービスを起動しておく
                     ChargingWatchService.start(context)
@@ -124,6 +129,19 @@ private fun SetupScreen() {
                     Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:${context.packageName}")
+                    )
+                )
+            }
+        )
+
+        MusicAppsBatteryCard(
+            step = "3",
+            apps = musicApps,
+            onOpenSettings = { pkg ->
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$pkg")
                     )
                 )
             }
@@ -182,4 +200,100 @@ private fun SetupStepCard(
             }
         }
     }
+}
+
+/** 設定画面に並べる、インストール済み音楽アプリの状態 */
+private data class MusicAppStatus(
+    val packageName: String,
+    val label: String,
+    /** バッテリー最適化の対象外(「制限なし」)になっていれば true */
+    val unrestricted: Boolean,
+)
+
+/**
+ * 対応する音楽アプリのうち端末に入っているものを、
+ * バッテリー最適化の除外状態つきで返す。
+ */
+private fun loadInstalledMusicApps(context: Context): List<MusicAppStatus> {
+    val pm = context.packageManager
+    val power = context.getSystemService(PowerManager::class.java)
+    return MediaSessionWatcher.MUSIC_APP_PACKAGES.mapNotNull { pkg ->
+        val info = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull()
+            ?: return@mapNotNull null
+        MusicAppStatus(
+            packageName = pkg,
+            label = pm.getApplicationLabel(info).toString(),
+            unrestricted = power.isIgnoringBatteryOptimizations(pkg),
+        )
+    }.sortedBy { it.label.lowercase() }
+}
+
+@Composable
+private fun MusicAppsBatteryCard(
+    step: String,
+    apps: List<MusicAppStatus>,
+    onOpenSettings: (packageName: String) -> Unit
+) {
+    val allDone = apps.isNotEmpty() && apps.all { it.unrestricted }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "$step. ${stringResource(R.string.step_battery_title)}",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                if (apps.isNotEmpty()) {
+                    StatusLabel(done = allDone)
+                }
+            }
+            Text(
+                text = stringResource(R.string.step_battery_desc),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 14.sp
+            )
+            if (apps.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.step_battery_none),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            }
+            apps.forEach { app ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = app.label, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        StatusLabel(done = app.unrestricted)
+                    }
+                    Button(onClick = { onOpenSettings(app.packageName) }) {
+                        Text(stringResource(R.string.step_battery_button))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusLabel(done: Boolean) {
+    Text(
+        text = if (done) stringResource(R.string.status_done)
+        else stringResource(R.string.status_todo),
+        color = if (done) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 14.sp
+    )
 }

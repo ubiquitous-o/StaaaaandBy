@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">StaaaaandBy</string>
 
-    <string name="setup_intro">While charging wirelessly, StaaaaandBy fills your screen with a clock and the music you\'re playing. Just two quick steps to get ready.</string>
+    <string name="setup_intro">While charging wirelessly, StaaaaandBy fills your screen with a clock and the music you\'re playing. Just three quick steps to get ready.</string>
 
     <string name="step_notification_title">Allow notification access</string>
     <string name="step_notification_desc">This lets StaaaaandBy read the title and artwork of the song you\'re playing. Feel free to skip it — the clock works just fine on its own.</string>
@@ -11,6 +11,11 @@
     <string name="step_overlay_title">Allow display over other apps</string>
     <string name="step_overlay_desc">This lets StaaaaandBy appear when you place your phone on a wireless charger, or press the side key while charging.</string>
     <string name="step_overlay_button">Open display settings</string>
+
+    <string name="step_battery_title">Keep your music app awake</string>
+    <string name="step_battery_desc">Android may put a music app to sleep to save memory — then the song playing on another device (like Spotify on your Mac) stops showing up. For each music app below, open its settings, tap Battery, and choose Unrestricted.</string>
+    <string name="step_battery_button">Open app settings</string>
+    <string name="step_battery_none">No supported music app found on this phone. Install one such as Spotify or YouTube Music and it will show up here.</string>
 
     <string name="status_done">✓ All set</string>
     <string name="status_todo">Not yet</string>
