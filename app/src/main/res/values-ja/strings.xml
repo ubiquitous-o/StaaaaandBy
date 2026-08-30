@@ -15,6 +15,12 @@
     <string name="step_battery_button">アプリの設定を開く</string>
     <string name="step_battery_none">対応する音楽アプリが見つかりませんでした。SpotifyやYouTube Musicなどをインストールすると、ここに表示されます。</string>
 
+    <string name="prefs_title">好みの設定</string>
+    <string name="pref_wired_title">ケーブル充電でも表示する</string>
+    <string name="pref_wired_desc">オフ: ワイヤレス（Qi）充電のときだけ表示します。オン: USBケーブルでの充電でも表示します。</string>
+    <string name="pref_portrait_title">縦向きでも表示する</string>
+    <string name="pref_portrait_desc">オフ: 横向きに置いたときだけ表示します。オン: どの向きでも表示し、縦向きではジャケットを上から下へスリットスキャンします。</string>
+
     <string name="status_done">✓ 設定できました</string>
     <string name="status_todo">これから</string>
 

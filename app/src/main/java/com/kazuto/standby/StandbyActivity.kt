@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.os.BatteryManager
 import android.os.Bundle
@@ -76,6 +77,13 @@ class StandbyActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 既定は横向き固定(上下はセンサーで自動)。設定で縦向きも許可できる
+        val allowPortrait = Prefs.allowPortrait(this)
+        requestedOrientation = if (allowPortrait) {
+            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
         setShowWhenLocked(true)
         setTurnScreenOn(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -102,8 +110,9 @@ class StandbyActivity : ComponentActivity() {
         })
 
         setContent {
-            // 起動直後の1〜2フレームは縦向きで描かれるので、
-            // 横向きになるまでは黒だけを出し、横になったらフェードインする
+            // 横向き限定のときは、起動直後の1〜2フレームが縦向きで描かれるので
+            // 横向きになるまでは黒だけを出し、横になったらフェードインする。
+            // 縦向き許可のときはどちらの向きでもすぐフェードインする
             val isLandscape =
                 LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
             Box(
@@ -112,7 +121,7 @@ class StandbyActivity : ComponentActivity() {
                     .background(Color.Black)
             ) {
                 AnimatedVisibility(
-                    visible = isLandscape,
+                    visible = allowPortrait || isLandscape,
                     enter = fadeIn(animationSpec = tween(durationMillis = 700)),
                     exit = fadeOut(animationSpec = tween(durationMillis = 200))
                 ) {

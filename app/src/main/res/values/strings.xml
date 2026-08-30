@@ -17,6 +17,12 @@
     <string name="step_battery_button">Open app settings</string>
     <string name="step_battery_none">No supported music app found on this phone. Install one such as Spotify or YouTube Music and it will show up here.</string>
 
+    <string name="prefs_title">Preferences</string>
+    <string name="pref_wired_title">Also start on wired charging</string>
+    <string name="pref_wired_desc">Off: only a wireless (Qi) charger brings up StaaaaandBy. On: a USB cable does too.</string>
+    <string name="pref_portrait_title">Also start in portrait</string>
+    <string name="pref_portrait_desc">Off: only when the phone is lying sideways. On: any orientation — in portrait, the artwork slit-scans from top to bottom.</string>
+
     <string name="status_done">✓ All set</string>
     <string name="status_todo">Not yet</string>
 

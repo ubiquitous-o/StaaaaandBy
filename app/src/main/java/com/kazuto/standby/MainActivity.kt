@@ -24,6 +24,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
@@ -146,6 +147,8 @@ private fun SetupScreen() {
                 )
             }
         )
+
+        PreferencesCard()
 
         Spacer(modifier = Modifier.height(8.dp))
         Text(
@@ -296,4 +299,72 @@ private fun StatusLabel(done: Boolean) {
         else MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 14.sp
     )
+}
+
+/** 起動条件の好み: ケーブル充電でも起動するか / 縦向きでも起動するか */
+@Composable
+private fun PreferencesCard() {
+    val context = LocalContext.current
+    var triggerOnWired by remember { mutableStateOf(Prefs.triggerOnWired(context)) }
+    var allowPortrait by remember { mutableStateOf(Prefs.allowPortrait(context)) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.prefs_title),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            PreferenceSwitch(
+                title = stringResource(R.string.pref_wired_title),
+                description = stringResource(R.string.pref_wired_desc),
+                checked = triggerOnWired,
+                onCheckedChange = {
+                    triggerOnWired = it
+                    Prefs.setTriggerOnWired(context, it)
+                }
+            )
+            PreferenceSwitch(
+                title = stringResource(R.string.pref_portrait_title),
+                description = stringResource(R.string.pref_portrait_desc),
+                checked = allowPortrait,
+                onCheckedChange = {
+                    allowPortrait = it
+                    Prefs.setAllowPortrait(context, it)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PreferenceSwitch(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text(
+                text = description,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
 }

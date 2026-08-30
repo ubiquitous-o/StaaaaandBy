@@ -47,7 +47,6 @@
             android:name=".StandbyActivity"
             android:exported="false"
             android:theme="@style/Theme.StandBy.Standby"
-            android:screenOrientation="sensorLandscape"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:excludeFromRecents="true"

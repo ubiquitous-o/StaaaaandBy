@@ -22,6 +22,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.kazuto.standby.Prefs
 import com.kazuto.standby.R
 import com.kazuto.standby.StandbyActivity
 import kotlin.math.abs
@@ -29,7 +30,7 @@ import kotlin.math.abs
 /**
  * 充電・画面状態を常駐監視して、条件が揃ったら StandbyActivity を起動する。
  *
- * 起動条件:
+ * 起動条件(充電の種類と向きは Prefs の設定に従う):
  *  - 充電開始時、画面が消えていたら起動
  *  - 画面が消えた時(サイドキー等)、充電中なら起動
  *
@@ -92,7 +93,7 @@ class ChargingWatchService : Service() {
 
     private fun maybeLaunch(delayMs: Long) {
         handler.postDelayed({
-            if (!isWirelessCharging() || !Settings.canDrawOverlays(this)) {
+            if (!isTriggerCharging() || !Settings.canDrawOverlays(this)) {
                 return@postDelayed
             }
             // 基本は画面オフのときだけ起動する。
@@ -117,6 +118,11 @@ class ChargingWatchService : Service() {
      */
     private fun startOrientationWatch() {
         if (orientationListener != null) return
+        if (Prefs.allowPortrait(this)) {
+            // 縦向きでも起動する設定なら向きは問わず即起動
+            launchStandby()
+            return
+        }
         val sensorManager = getSystemService(SensorManager::class.java)
         val sensor = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         if (sensorManager == null || sensor == null) {
@@ -132,7 +138,7 @@ class ChargingWatchService : Service() {
             }
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                if (!isWirelessCharging() ||
+                if (!isTriggerCharging() ||
                     (isScreenOn() && !shouldRecoverFromChargingPause())
                 ) {
                     stopOrientationWatch()
@@ -177,14 +183,16 @@ class ChargingWatchService : Service() {
     }
 
     /**
-     * Qi(ワイヤレス)充電中のみ true。ケーブル(AC/USB)では起動しない。
+     * 起動対象の充電中なら true。既定は Qi(ワイヤレス)のみ、
+     * 設定で「ケーブルでも起動」にしていれば AC/USB でも true。
      * BatteryManager.isCharging は満充電(status=FULL)で false になるので、
      * sticky な ACTION_BATTERY_CHANGED からプラグ状態を見る。
      */
-    private fun isWirelessCharging(): Boolean {
+    private fun isTriggerCharging(): Boolean {
         val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val plugged = battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
-        return plugged == BatteryManager.BATTERY_PLUGGED_WIRELESS
+        if (plugged == BatteryManager.BATTERY_PLUGGED_WIRELESS) return true
+        return plugged != 0 && Prefs.triggerOnWired(this)
     }
 
     private fun isScreenOn(): Boolean =

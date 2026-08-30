@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.BatteryManager
 import android.os.SystemClock
@@ -38,14 +39,15 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kazuto.standby.R
@@ -55,7 +57,6 @@ import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.roundToInt
 
 private val ScreenBg = Color.Black
 private val TextPrimary = Color(0xFFF2F3F5)
@@ -95,11 +96,33 @@ private val LabelFontFamily = FontFamily(
     )
 )
 
+/** 画面の向きごとのレイアウト値。縦画面は幅が狭いので少し詰める */
+private class Layout(
+    val timeSize: TextUnit,
+    val dateSize: TextUnit,
+    val dateSpacing: TextUnit,
+    val trackStart: Dp,
+    val trackBottom: Dp,
+    val trackWidthFraction: Float,
+)
+
+private val LandscapeLayout = Layout(
+    timeSize = 120.sp, dateSize = 24.sp, dateSpacing = 4.sp,
+    trackStart = 36.dp, trackBottom = 30.dp, trackWidthFraction = 0.62f,
+)
+private val PortraitLayout = Layout(
+    timeSize = 84.sp, dateSize = 20.sp, dateSpacing = 3.sp,
+    trackStart = 24.dp, trackBottom = 40.dp, trackWidthFraction = 0.88f,
+)
+
 @Composable
 fun StandbyScreen(mediaWatcher: MediaSessionWatcher) {
     val now by rememberCurrentTime()
     val battery by rememberBatteryStatus()
     val nowPlaying by mediaWatcher.nowPlaying.collectAsState()
+    val isPortrait =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
+    val layout = if (isPortrait) PortraitLayout else LandscapeLayout
 
     Box(
         modifier = Modifier
@@ -138,14 +161,16 @@ fun StandbyScreen(mediaWatcher: MediaSessionWatcher) {
         ClockOverlay(
             now = now,
             battery = battery,
+            layout = layout,
             modifier = Modifier.align(Alignment.Center)
         )
         playing?.let { p ->
             TrackInfo(
                 playing = p,
+                layout = layout,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 36.dp, bottom = 30.dp)
+                    .padding(start = layout.trackStart, bottom = layout.trackBottom)
             )
         }
     }
@@ -153,8 +178,8 @@ fun StandbyScreen(mediaWatcher: MediaSessionWatcher) {
 
 /** 左下のターミナル風「再生中」表示。長い文字列は領域内でマーキースクロールする。 */
 @Composable
-private fun TrackInfo(playing: NowPlaying, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxWidth(0.62f)) {
+private fun TrackInfo(playing: NowPlaying, layout: Layout, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxWidth(layout.trackWidthFraction)) {
         MarqueeText(
             text = playing.title.uppercase(Locale.ENGLISH),
             style = TextStyle(
@@ -205,9 +230,10 @@ private fun MarqueeText(text: String, style: TextStyle, modifier: Modifier = Mod
 }
 
 /**
- * 正方形のアートワークを高さいっぱいに描き、再生位置に対応する縦1列を
+ * 横画面: 正方形のアートワークを高さいっぱいに描き、再生位置に対応する縦1列を
  * 横に引き伸ばして(スリットスキャン)、画面の余り幅を埋める。
  * 引き伸ばし幅 = 画面幅 - 画面高さ で、画面サイズに自動追従する。
+ * 縦画面: 同じことを縦方向に行い、スリットは上から下へ移動する。
  */
 @Composable
 private fun SlitScanArtwork(art: Bitmap, progress: Float, modifier: Modifier = Modifier) {
@@ -219,24 +245,52 @@ private fun SlitScanArtwork(art: Bitmap, progress: Float, modifier: Modifier = M
         val srcH = image.height
         if (srcW <= 0 || srcH <= 0) return@Canvas
 
-        if (w <= h) {
-            // 縦長・正方形画面ではスリット不要。中央クロップでカバー表示
-            val targetAspect = w / h
-            val cropW = (srcH * targetAspect).coerceAtMost(srcW.toFloat())
-            val cropX = (srcW - cropW) / 2f
-            drawImage(
-                image = image,
-                srcOffset = IntOffset(cropX.roundToInt(), 0),
-                srcSize = IntSize(cropW.roundToInt().coerceAtLeast(1), srcH),
-                dstOffset = IntOffset.Zero,
-                dstSize = IntSize(w.roundToInt(), h.roundToInt())
-            )
-            return@Canvas
-        }
-
         // すべてfloatで計算し、クリップ+変換で描くことでサブピクセル単位で滑らかに動かす
         val srcWf = srcW.toFloat()
         val srcHf = srcH.toFloat()
+
+        if (w <= h) {
+            // 縦画面: アートを幅いっぱいに描き、再生位置の横1行を縦に引き伸ばして
+            // 余った高さを埋める。スリットは上から下へ移動する
+            val artDstH = w                          // 正方形アートの表示高さ(幅いっぱい)
+            val slitDstH = h - artDstH               // スリットで埋める高さ
+            val slitSrcY = progress * (srcHf - 1f)   // 引き伸ばす横1行の位置
+            val topDstH = progress * artDstH         // スリットより上の表示高さ
+            val sx = w / srcWf
+
+            // スリットより上の部分: src[0..slitSrcY] → dst[0..topDstH]
+            if (topDstH > 0.5f && slitSrcY > 0.5f) {
+                clipRect(0f, 0f, w, topDstH) {
+                    scale(scaleX = sx, scaleY = topDstH / slitSrcY, pivot = Offset.Zero) {
+                        drawImage(image)
+                    }
+                }
+            }
+            // 再生位置の横1行を縦に引き伸ばす: src[slitSrcY..slitSrcY+1] → dst[topDstH..topDstH+slitDstH]
+            if (slitDstH > 0.5f) {
+                clipRect(0f, topDstH, w, topDstH + slitDstH) {
+                    translate(top = topDstH - slitSrcY * slitDstH) {
+                        scale(scaleX = sx, scaleY = slitDstH, pivot = Offset.Zero) {
+                            drawImage(image)
+                        }
+                    }
+                }
+            }
+            // スリットより下の部分: src[slitSrcY..srcH] → dst[topDstH+slitDstH..h]
+            val bottomDstH = h - topDstH - slitDstH
+            if (bottomDstH > 0.5f && srcHf - slitSrcY > 0.5f) {
+                val sy = bottomDstH / (srcHf - slitSrcY)
+                clipRect(0f, topDstH + slitDstH, w, h) {
+                    translate(top = topDstH + slitDstH - slitSrcY * sy) {
+                        scale(scaleX = sx, scaleY = sy, pivot = Offset.Zero) {
+                            drawImage(image)
+                        }
+                    }
+                }
+            }
+            return@Canvas
+        }
+
         val artDstW = h                          // 正方形アートの表示幅(高さいっぱい)
         val slitDstW = w - artDstW               // スリットで埋める幅
         val slitSrcX = progress * (srcWf - 1f)   // 引き伸ばす縦1列の位置
@@ -278,6 +332,7 @@ private fun SlitScanArtwork(art: Bitmap, progress: Float, modifier: Modifier = M
 private fun ClockOverlay(
     now: LocalDateTime,
     battery: BatteryStatus,
+    layout: Layout,
     modifier: Modifier = Modifier
 ) {
     val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
@@ -290,7 +345,7 @@ private fun ClockOverlay(
                 color = TextPrimary,
                 fontFamily = TimeFontFamily,
                 fontWeight = FontWeight.Bold,
-                fontSize = 120.sp,
+                fontSize = layout.timeSize,
                 shadow = OverlayShadow
             ),
             maxLines = 1,
@@ -302,8 +357,8 @@ private fun ClockOverlay(
                 color = TextPrimary.copy(alpha = 0.85f),
                 fontFamily = LabelFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = 24.sp,
-                letterSpacing = 4.sp,
+                fontSize = layout.dateSize,
+                letterSpacing = layout.dateSpacing,
                 shadow = OverlayShadow
             )
         )
