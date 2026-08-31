@@ -12,6 +12,7 @@ object Prefs {
     private const val KEY_TRIGGER_ON_WIRED = "trigger_on_wired"
     private const val KEY_ALLOW_PORTRAIT = "allow_portrait"
     private const val KEY_LAST_MUSIC_APP = "last_music_app"
+    private const val KEY_LAST_MUSIC_REMOTE = "last_music_remote"
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -36,4 +37,14 @@ object Prefs {
 
     fun setLastMusicApp(context: Context, packageName: String) =
         prefs(context).edit().putString(KEY_LAST_MUSIC_APP, packageName).apply()
+
+    /**
+     * 直近の再生が「他端末の鏡」だったか(PLAYING なのに端末から音が出ていなかった)。
+     * スタンバイを出し直しても引き継ぎ、PAUSED で固まった鏡を疑う材料にする。
+     */
+    fun lastMusicWasRemote(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_LAST_MUSIC_REMOTE, false)
+
+    fun setLastMusicWasRemote(context: Context, value: Boolean) =
+        prefs(context).edit().putBoolean(KEY_LAST_MUSIC_REMOTE, value).apply()
 }

@@ -87,14 +87,6 @@ class MusicAppKeepAlive(private val context: Context) {
         boundPackage = null
     }
 
-    /** 繋ぎ直す。鏡が止まっているときの刺激として使う。 */
-    fun rebind() {
-        val pkg = boundPackage ?: return
-        Log.i(TAG, "keepAlive: rebind $pkg")
-        unbind()
-        bind(pkg)
-    }
-
     private fun findMediaBrowserService(packageName: String): ComponentName? {
         val intent = Intent(ACTION_MEDIA_BROWSER).setPackage(packageName)
         val resolved = context.packageManager.queryIntentServices(intent, 0)

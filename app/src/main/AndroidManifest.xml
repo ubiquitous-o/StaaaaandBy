@@ -63,12 +63,13 @@
                 android:value="Watches charging state to launch the standby clock screen" />
         </service>
 
-        <!-- 再起動後にサービスを立ち上げ直す -->
+        <!-- 再起動後・アプリ更新後にサービスを立ち上げ直す -->
         <receiver
             android:name=".service.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

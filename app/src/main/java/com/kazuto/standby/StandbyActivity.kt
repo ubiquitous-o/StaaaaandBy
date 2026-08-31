@@ -102,6 +102,7 @@ class StandbyActivity : ComponentActivity() {
         }
 
         mediaWatcher = MediaSessionWatcher(applicationContext)
+        mediaWatcher.onResyncNeeded = ::resyncViaForeground
         mediaWatcher.start()
 
         registerReceiver(powerReceiver, IntentFilter().apply {
@@ -145,14 +146,48 @@ class StandbyActivity : ComponentActivity() {
         lastVisibleAt = SystemClock.elapsedRealtime()
         super.onStop()
         // 画面が消えた/他の画面に隠れたら裏に残さない。
-        // ただし構成変更(折りたたみ姿勢・回転等)による再生成のときは終了しない
-        if (!isChangingConfigurations) {
+        // ただし構成変更(折りたたみ姿勢・回転等)による再生成や、
+        // 同期し直しのために自分で一瞬隠れたときは終了しない
+        if (!isChangingConfigurations && !resyncing) {
             finish()
         }
     }
 
+    /** 同期し直しで音楽アプリを一瞬前に出しているあいだ true(onStop で終了しないため) */
+    private var resyncing = false
+
+    private val endResync = Runnable { resyncing = false }
+
+    /**
+     * 他端末の鏡が固まったときの同期し直し。
+     * Spotify は自分の画面が前に出たときにしか他端末の再生状態を取りに行かないので、
+     * 音楽アプリを起動して、描画される前に自分を前に戻す。
+     * 起動しただけで同期が走ることは実機で確認済み(ロック画面が一瞬ちらつく)。
+     */
+    private fun resyncViaForeground(packageName: String) {
+        val launch = packageManager.getLaunchIntentForPackage(packageName) ?: return
+        resyncing = true
+        handler.removeCallbacks(endResync)
+        handler.postDelayed(endResync, 3_000)
+        startActivity(
+            launch.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION
+            )
+        )
+        handler.postDelayed({
+            startActivity(
+                Intent(this, StandbyActivity::class.java).addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION
+                )
+            )
+        }, 300)
+    }
+
     override fun onDestroy() {
         handler.removeCallbacks(delayedFinish)
+        handler.removeCallbacks(endResync)
         unregisterReceiver(powerReceiver)
         mediaWatcher.stop()
         super.onDestroy()

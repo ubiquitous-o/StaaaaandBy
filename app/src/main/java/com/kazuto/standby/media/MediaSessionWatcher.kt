@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
@@ -103,28 +104,71 @@ class MediaSessionWatcher(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
 
     /**
-     * 見張り: 定期的に状態をログに残し、「PLAYING なのに計算上の再生位置が
-     * 曲の長さを大きく超えている」= 他端末の鏡が静かに切れている状態を検知したら、
-     * セッションを取り直し、音楽アプリへの bind をやり直して刺激を入れる。
+     * 鏡の同期し直しが必要なときに呼ばれる。引数は音楽アプリのパッケージ名。
+     * 受け手(StandbyActivity)はそのアプリを一瞬前に出して即座に自分を戻す。
+     * Spotify は自分の画面が前に出たときにしか他端末の状態を取りに行かないため。
+     */
+    var onResyncNeeded: ((packageName: String) -> Unit)? = null
+
+    private val audioManager = context.getSystemService(AudioManager::class.java)
+
+    /**
+     * 直近で PLAYING だったとき、端末から音が出ていなかった = 他端末の再生を
+     * 映している鏡だった。ローカル再生のアプリでは PAUSED を疑わないために覚えておく。
+     */
+    private var lastKnownRemote = Prefs.lastMusicWasRemote(context)
+        set(value) {
+            if (field != value) {
+                field = value
+                Prefs.setLastMusicWasRemote(context, value)
+                Log.i(TAG, "remote playback: $value")
+            }
+        }
+
+    // 同期し直しの乱発防止: 疑いが続くあいだは間隔を広げていく
+    private var resyncCount = 0
+    private var nextResyncAt = 0L
+
+    /**
+     * 見張り: 定期的に状態をログに残し、他端末の鏡が静かに切れている疑いを検知する。
+     *  - PLAYING なのに計算上の再生位置が曲の長さを大きく超えている
+     *  - (鏡だったセッションが) PAUSED のまま長いあいだ一度も更新が来ていない。
+     *    Spotify は同期が切れると相手を PAUSED と思い込んだまま固まる。本当の
+     *    一時停止と区別はつかないので、間隔を広げながら疑い続ける
+     * 検知したらセッションを取り直し、onResyncNeeded で同期し直しを頼む。
      */
     private val watchdog = object : Runnable {
         override fun run() {
             val np = _nowPlaying.value
             val now = SystemClock.elapsedRealtime()
             if (np != null) {
+                val sinceUpdate = now - np.positionUpdatedAt
                 val extrapolated = np.positionMs +
-                    if (np.isPlaying) ((now - np.positionUpdatedAt) * np.playbackSpeed).toLong() else 0L
-                val stale = np.isPlaying && np.durationMs > 0 &&
+                    if (np.isPlaying) (sinceUpdate * np.playbackSpeed).toLong() else 0L
+                if (np.isPlaying && sinceUpdate > 3_000) {
+                    lastKnownRemote = audioManager?.isMusicActive == false
+                }
+                val overrun = np.isPlaying && np.durationMs > 0 &&
                     extrapolated > np.durationMs + STALE_MARGIN_MS
+                val pausedTooLong = !np.isPlaying && lastKnownRemote && sinceUpdate > PAUSED_STALE_MS
+                val stale = overrun || pausedTooLong
                 Log.i(
                     TAG,
-                    "watchdog: '${np.title}' playing=${np.isPlaying} " +
-                        "pos=$extrapolated/${np.durationMs} sinceUpdate=${now - np.positionUpdatedAt}ms" +
-                        if (stale) " STALE" else ""
+                    "watchdog: '${np.title}' playing=${np.isPlaying} remote=$lastKnownRemote " +
+                        "pos=$extrapolated/${np.durationMs} sinceUpdate=${sinceUpdate}ms" +
+                        if (stale) " STALE(${if (overrun) "overrun" else "paused"})" else ""
                 )
-                if (stale) {
+                if (!stale) {
+                    resyncCount = 0
+                    nextResyncAt = 0L
+                } else if (now >= nextResyncAt) {
+                    val pkg = controller?.packageName
+                    val backoff = RESYNC_BACKOFF_MS[minOf(resyncCount, RESYNC_BACKOFF_MS.lastIndex)]
+                    resyncCount++
+                    nextResyncAt = now + backoff
+                    Log.w(TAG, "watchdog: resync #$resyncCount via $pkg, next in ${backoff / 1000}s")
                     refreshSessions()
-                    keepAlive.rebind()
+                    if (pkg != null) onResyncNeeded?.invoke(pkg)
                 }
             } else {
                 Log.i(TAG, "watchdog: no now-playing (controller=${controller?.packageName})")
@@ -137,6 +181,9 @@ class MediaSessionWatcher(private val context: Context) {
         private const val TAG = "StaaaaandBy"
         private const val WATCHDOG_INTERVAL_MS = 15_000L
         private const val STALE_MARGIN_MS = 5_000L
+        private const val PAUSED_STALE_MS = 60_000L
+        /** 同期し直しの間隔: 1回目は即、その後 5分 → 15分 → 30分ごと */
+        private val RESYNC_BACKOFF_MS = longArrayOf(5 * 60_000L, 15 * 60_000L, 30 * 60_000L)
 
         /**
          * スタンバイに表示するのは音楽アプリのみ。
