@@ -128,6 +128,24 @@ class MediaSessionWatcher(private val context: Context) {
     /** PLAYING 中に端末から音が出ていた見張りの連続回数 */
     private var localAudioTicks = 0
 
+    /**
+     * 鏡の巻き戻り対策。他端末の再生が10分止まると Spotify は Connect の鏡を畳み、
+     * スマホ自身の古いローカル再生状態(別の曲・別の位置・PAUSED)でセッションを
+     * 出し直す(2026-09-01 実測)。これをそのまま信じると表示が別の曲に変わり、
+     * タップするとスマホからその曲がローカル再生されてしまう。
+     *
+     * 対策: 鏡が消えた瞬間に直前の表示を凍結し(frozenRemote)、その後に現れた
+     * 「最後に鏡で流れていた曲と違う曲の、再生中でないセッション」は偽物と疑う
+     * (fallbackSuspected)。疑っているあいだは表示は凍結のまま、タップも無視する。
+     * セッションが PLAYING になったら(Mac側の再開、またはユーザーが自分で再生)
+     * 疑いを解いて通常に戻る。
+     */
+    private var frozenRemote: NowPlaying? = null
+    private var fallbackSuspected = false
+
+    /** Prefs に保存済みの「鏡で最後に流れていた曲名」(書き込み間引き用のキャッシュ) */
+    private var savedRemoteTitle: String? = Prefs.lastRemoteTitle(context)
+
     // 同期し直しの乱発防止: 疑いが続くあいだは間隔を広げていく
     private var resyncCount = 0
     private var nextResyncAt = 0L
@@ -255,7 +273,25 @@ class MediaSessionWatcher(private val context: Context) {
         controller = null
     }
 
+    /**
+     * タップを渡してはいけない状態か。
+     *  - fallbackSuspected: 鏡が畳まれた後の偽セッション(別の曲のローカル状態)
+     *  - 鏡が PAUSED のまま長く更新なし: 静かに切れた鏡の疑い。ここに play を
+     *    送ると Connect の再生権ごとスマホに移り、他端末の再生を乗っ取って
+     *    しまう(2026-09-01 実測: Mac の再生が止まりスマホから鳴り出した)
+     */
+    private fun tapsUnsafe(): Boolean {
+        if (fallbackSuspected) return true
+        val np = _nowPlaying.value ?: return false
+        return lastKnownRemote && !np.isPlaying &&
+            SystemClock.elapsedRealtime() - np.positionUpdatedAt > PAUSED_STALE_MS
+    }
+
     fun playPause() {
+        if (tapsUnsafe()) {
+            Log.w(TAG, "tap ignored: possibly desynced mirror (would steal playback)")
+            return
+        }
         val c = controller ?: return
         if (c.playbackState?.state == PlaybackState.STATE_PLAYING) {
             c.transportControls.pause()
@@ -265,10 +301,18 @@ class MediaSessionWatcher(private val context: Context) {
     }
 
     fun skipToNext() {
+        if (tapsUnsafe()) {
+            Log.w(TAG, "tap ignored: possibly desynced mirror (would steal playback)")
+            return
+        }
         controller?.transportControls?.skipToNext()
     }
 
     fun skipToPrevious() {
+        if (tapsUnsafe()) {
+            Log.w(TAG, "tap ignored: possibly desynced mirror (would steal playback)")
+            return
+        }
         controller?.transportControls?.skipToPrevious()
     }
 
@@ -290,8 +334,31 @@ class MediaSessionWatcher(private val context: Context) {
                     "title=${c.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)})"
             }.ifEmpty { "no music sessions" }
         )
+        // 鏡が消えた瞬間: 直前の表示を凍結する(PAUSED 表示として持ち続ける)
+        if (music.isEmpty() && lastKnownRemote && frozenRemote == null) {
+            _nowPlaying.value?.let {
+                frozenRemote = it.copy(isPlaying = false)
+                Log.w(TAG, "mirror vanished: freezing '${it.title}'")
+            }
+        }
+
         controller = pickBest(music)
         controller?.registerCallback(controllerCallback)
+
+        // 現れたセッションが「鏡で最後に流れていた曲と違う曲の、再生中でないもの」
+        // なら、鏡が畳まれてローカル状態に巻き戻った偽物と疑う
+        val newState = controller?.playbackState?.state
+        val newTitle = controller?.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+        val expected = frozenRemote?.title ?: savedRemoteTitle
+        if (controller != null && lastKnownRemote &&
+            newState != PlaybackState.STATE_PLAYING &&
+            expected != null && newTitle != expected
+        ) {
+            if (!fallbackSuspected) {
+                Log.w(TAG, "fallback session suspected: '$newTitle' (expected '$expected')")
+            }
+            fallbackSuspected = true
+        }
 
         // 生かしておく相手: いま選んだ音楽アプリ。セッションが無いときは
         // 最後に使っていたアプリ、それも無ければ入っている音楽アプリの先頭を
@@ -317,6 +384,30 @@ class MediaSessionWatcher(private val context: Context) {
     private fun publish() {
         val c = controller
         val metadata = c?.metadata
+
+        // 鏡の巻き戻りを疑っているあいだの扱い
+        if (frozenRemote != null || fallbackSuspected) {
+            if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                // 再生が始まった: 鏡の復帰か、ユーザー自身の意図的な再生。信じる
+                Log.i(TAG, "playback resumed: unfreeze")
+                frozenRemote = null
+                fallbackSuspected = false
+            } else if (fallbackSuspected) {
+                // 偽セッション: 音楽表示を消して時計だけにする。
+                // 凍結表示のままだとタップが効かない理由が見た目で分からないため、
+                // 「音楽情報が取れなくなった」ことをはっきり見せる
+                _nowPlaying.value = null
+                return
+            } else if (c == null || metadata == null) {
+                // セッション消滅直後の短い隙間: ちらつき防止に直前の表示を保つ
+                _nowPlaying.value = frozenRemote
+                return
+            } else {
+                // 同じ曲のままの PAUSED セッションが戻ってきた: 本物とみなす
+                frozenRemote = null
+            }
+        }
+
         if (c == null || metadata == null) {
             _nowPlaying.value = null
             return
@@ -356,6 +447,14 @@ class MediaSessionWatcher(private val context: Context) {
                 ?: android.os.SystemClock.elapsedRealtime(),
             playbackSpeed = state?.playbackSpeed?.takeIf { it > 0f } ?: 1f,
         )
+
+        // 鏡で再生中の曲名を覚えておく(偽セッションの見分けに使う)
+        if (lastKnownRemote && state?.state == PlaybackState.STATE_PLAYING &&
+            title != savedRemoteTitle
+        ) {
+            savedRemoteTitle = title
+            Prefs.setLastRemoteTitle(context, title)
+        }
     }
 
     /**

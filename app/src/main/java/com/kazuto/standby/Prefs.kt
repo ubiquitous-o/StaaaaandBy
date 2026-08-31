@@ -13,6 +13,7 @@ object Prefs {
     private const val KEY_ALLOW_PORTRAIT = "allow_portrait"
     private const val KEY_LAST_MUSIC_APP = "last_music_app"
     private const val KEY_LAST_MUSIC_REMOTE = "last_music_remote"
+    private const val KEY_LAST_REMOTE_TITLE = "last_remote_title"
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -47,4 +48,15 @@ object Prefs {
 
     fun setLastMusicWasRemote(context: Context, value: Boolean) =
         prefs(context).edit().putBoolean(KEY_LAST_MUSIC_REMOTE, value).apply()
+
+    /**
+     * 鏡(他端末の再生)で最後に流れていた曲名。
+     * 鏡が畳まれた後に現れる「スマホ自身の古いローカル状態」の偽セッションを、
+     * スタンバイを出し直した後でも見分けるために使う。
+     */
+    fun lastRemoteTitle(context: Context): String? =
+        prefs(context).getString(KEY_LAST_REMOTE_TITLE, null)
+
+    fun setLastRemoteTitle(context: Context, value: String) =
+        prefs(context).edit().putString(KEY_LAST_REMOTE_TITLE, value).apply()
 }
