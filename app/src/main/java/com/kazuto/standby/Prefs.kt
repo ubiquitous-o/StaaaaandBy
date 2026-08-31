@@ -11,6 +11,7 @@ object Prefs {
     private const val FILE = "settings"
     private const val KEY_TRIGGER_ON_WIRED = "trigger_on_wired"
     private const val KEY_ALLOW_PORTRAIT = "allow_portrait"
+    private const val KEY_LAST_MUSIC_APP = "last_music_app"
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -28,4 +29,11 @@ object Prefs {
 
     fun setAllowPortrait(context: Context, value: Boolean) =
         prefs(context).edit().putBoolean(KEY_ALLOW_PORTRAIT, value).apply()
+
+    /** 最後に曲情報を取った音楽アプリ。セッションが消えたときに起こしにいく相手。 */
+    fun lastMusicApp(context: Context): String? =
+        prefs(context).getString(KEY_LAST_MUSIC_APP, null)
+
+    fun setLastMusicApp(context: Context, packageName: String) =
+        prefs(context).edit().putString(KEY_LAST_MUSIC_APP, packageName).apply()
 }

@@ -9,6 +9,11 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
+import com.kazuto.standby.Prefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,17 +71,73 @@ class MediaSessionWatcher(private val context: Context) {
     private var loadingArtUri: String? = null
 
     private val controllerCallback = object : MediaController.Callback() {
-        override fun onMetadataChanged(metadata: MediaMetadata?) = publish()
-        override fun onPlaybackStateChanged(state: PlaybackState?) = publish()
-        override fun onSessionDestroyed() = refreshSessions()
+        override fun onMetadataChanged(metadata: MediaMetadata?) {
+            Log.i(TAG, "metadata: ${metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)}")
+            publish()
+        }
+
+        override fun onPlaybackStateChanged(state: PlaybackState?) {
+            Log.i(
+                TAG,
+                "playbackState: state=${state?.state} pos=${state?.position} " +
+                    "updated=${state?.lastPositionUpdateTime} now=${SystemClock.elapsedRealtime()}"
+            )
+            publish()
+        }
+
+        override fun onSessionDestroyed() {
+            Log.w(TAG, "session destroyed: ${controller?.packageName}")
+            refreshSessions()
+        }
     }
 
     private val sessionsListener =
         MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
+            Log.i(TAG, "active sessions changed: ${controllers.orEmpty().map { it.packageName }}")
             attach(controllers.orEmpty())
         }
 
+    // 音楽アプリのプロセスを生かしておく係(スタンバイ表示中だけ)
+    private val keepAlive = MusicAppKeepAlive(context)
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * 見張り: 定期的に状態をログに残し、「PLAYING なのに計算上の再生位置が
+     * 曲の長さを大きく超えている」= 他端末の鏡が静かに切れている状態を検知したら、
+     * セッションを取り直し、音楽アプリへの bind をやり直して刺激を入れる。
+     */
+    private val watchdog = object : Runnable {
+        override fun run() {
+            val np = _nowPlaying.value
+            val now = SystemClock.elapsedRealtime()
+            if (np != null) {
+                val extrapolated = np.positionMs +
+                    if (np.isPlaying) ((now - np.positionUpdatedAt) * np.playbackSpeed).toLong() else 0L
+                val stale = np.isPlaying && np.durationMs > 0 &&
+                    extrapolated > np.durationMs + STALE_MARGIN_MS
+                Log.i(
+                    TAG,
+                    "watchdog: '${np.title}' playing=${np.isPlaying} " +
+                        "pos=$extrapolated/${np.durationMs} sinceUpdate=${now - np.positionUpdatedAt}ms" +
+                        if (stale) " STALE" else ""
+                )
+                if (stale) {
+                    refreshSessions()
+                    keepAlive.rebind()
+                }
+            } else {
+                Log.i(TAG, "watchdog: no now-playing (controller=${controller?.packageName})")
+            }
+            handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
+        }
+    }
+
     companion object {
+        private const val TAG = "StaaaaandBy"
+        private const val WATCHDOG_INTERVAL_MS = 15_000L
+        private const val STALE_MARGIN_MS = 5_000L
+
         /**
          * スタンバイに表示するのは音楽アプリのみ。
          * YouTube等の動画アプリもMediaSessionを持つが、対象にしない。
@@ -96,16 +157,22 @@ class MediaSessionWatcher(private val context: Context) {
     }
 
     fun start() {
+        Log.i(TAG, "start")
         try {
             sessionManager.addOnActiveSessionsChangedListener(sessionsListener, listenerComponent)
             attach(sessionManager.getActiveSessions(listenerComponent))
         } catch (e: SecurityException) {
             // 通知アクセスが未許可。曲情報なしで動かす。
+            Log.w(TAG, "no notification access")
             _nowPlaying.value = null
         }
+        handler.postDelayed(watchdog, WATCHDOG_INTERVAL_MS)
     }
 
     fun stop() {
+        Log.i(TAG, "stop")
+        handler.removeCallbacks(watchdog)
+        keepAlive.unbind()
         scope.cancel()
         try {
             sessionManager.removeOnActiveSessionsChangedListener(sessionsListener)
@@ -142,10 +209,31 @@ class MediaSessionWatcher(private val context: Context) {
 
     private fun attach(controllers: List<MediaController>) {
         controller?.unregisterCallback(controllerCallback)
-        controller = pickBest(controllers.filter { it.packageName in MUSIC_APP_PACKAGES })
+        val music = controllers.filter { it.packageName in MUSIC_APP_PACKAGES }
+        Log.i(
+            TAG,
+            "attach: " + music.joinToString { c ->
+                "${c.packageName}(state=${c.playbackState?.state}, " +
+                    "title=${c.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)})"
+            }.ifEmpty { "no music sessions" }
+        )
+        controller = pickBest(music)
         controller?.registerCallback(controllerCallback)
+
+        // 生かしておく相手: いま選んだ音楽アプリ。セッションが無いときは
+        // 最後に使っていたアプリ、それも無ければ入っている音楽アプリの先頭を
+        // 起こしにいく(他端末の鏡を取り戻すため)
+        val pkg = controller?.packageName
+        if (pkg != null) Prefs.setLastMusicApp(context, pkg)
+        keepAlive.bind(pkg ?: Prefs.lastMusicApp(context) ?: firstInstalledMusicApp())
+
         publish()
     }
+
+    private fun firstInstalledMusicApp(): String? =
+        MUSIC_APP_PACKAGES.firstOrNull { pkg ->
+            runCatching { context.packageManager.getApplicationInfo(pkg, 0) }.isSuccess
+        }
 
     /** 再生中のセッションを最優先、なければメタデータを持つもの、それもなければ先頭。 */
     private fun pickBest(controllers: List<MediaController>): MediaController? =

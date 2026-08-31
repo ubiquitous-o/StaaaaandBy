@@ -47,6 +47,8 @@ If you play music on another device — e.g. Spotify on your Mac with Spotify Co
 
 The third setup step lists the supported music apps installed on the phone, shows whether each one is exempt from battery optimization, and opens its app settings with one tap. For each app, choose **Battery → Unrestricted**. This applies to any music app, not just Spotify. It makes the kill much less likely, though a true low-memory situation can still take the app down — reopening the music app restores the display.
 
+On top of that, StaaaaandBy actively keeps the music app alive while the standby screen is showing: it holds a `bindService` connection to the app's public `MediaBrowserService` (the same entry point Android Auto uses). A process bound by a foreground app isn't treated as a background app, so Samsung's nightly "auto optimization" leaves it alone, and if it does die, the bind restarts it right away. A watchdog also checks every 15 s whether the session looks stale (still "playing" but the extrapolated position ran past the end of the track — a sign the remote mirror silently dropped) and, if so, re-reads the sessions and re-binds to nudge the app. All of this is logged under the `StaaaaandBy` logcat tag.
+
 ## Privacy
 
 Everything stays on your device. Notification access is used solely to read the media sessions of music apps (title, artist, artwork, playback state) — notifications themselves are never read or stored. The INTERNET permission is used only to fetch album artwork. Nothing is collected or sent anywhere.
@@ -71,6 +73,7 @@ app/src/main/java/com/kazuto/standby/
 ├── service/ChargingWatchService.kt     # Persistent charging/screen watcher → launches StandbyActivity
 ├── service/BootReceiver.kt             # Restarts the service after reboot
 ├── media/NowPlayingListenerService.kt  # Notification listener required for MediaSession access (empty)
-├── media/MediaSessionWatcher.kt        # Publishes now-playing info and position via StateFlow
+├── media/MediaSessionWatcher.kt        # Publishes now-playing info and position via StateFlow; stale-session watchdog
+├── media/MusicAppKeepAlive.kt          # Keeps the music app process alive while standby is showing (bindService)
 └── ui/StandbyScreen.kt                 # Compose UI: slit-scan artwork (landscape/portrait) + clock overlay
 ```
