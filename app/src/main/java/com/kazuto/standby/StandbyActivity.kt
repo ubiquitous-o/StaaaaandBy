@@ -169,9 +169,14 @@ class StandbyActivity : ComponentActivity() {
         resyncing = true
         handler.removeCallbacks(endResync)
         handler.postDelayed(endResync, 3_000)
+        // NO_HISTORY: スタンバイに覆われた時点で音楽アプリの画面は自動で閉じ、
+        // スタンバイを終えたあとに音楽アプリの画面が表に残らないようにする
         startActivity(
             launch.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                    Intent.FLAG_ACTIVITY_NO_HISTORY or
+                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
             )
         )
         handler.postDelayed({

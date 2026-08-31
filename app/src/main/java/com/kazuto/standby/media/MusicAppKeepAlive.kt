@@ -13,31 +13,38 @@ import android.util.Log
  * Spotify Connect などで他の端末の再生を映しているとき、スマホ側の音楽アプリは
  * 音を出していないので「バックグラウンドの待機アプリ」扱いになり、
  * メモリ回収や Samsung の自動最適化で殺される。殺されると鏡が消えて表示が止まる。
+ * また、優先度が落ちた状態では Connect の同期が静かに切れることがある。
  *
- * 対策として、スタンバイ表示中はその音楽アプリの MediaBrowserService
- * (Android Auto 等が接続する公開サービス)に bindService で繋ぎっぱなしにする。
- * フォアグラウンドのアプリに bind されたプロセスは背景扱いにならず、
- * 死んでいれば bind が即座に起こす。Binder 自体は使わない。
+ * 対策として、スタンバイ表示中はその音楽アプリの公開サービスに bindService で
+ * 繋ぎっぱなしにする。フォアグラウンドのアプリに bind されたプロセスは背景扱いに
+ * ならず、死んでいれば bind が即座に起こす。Binder 自体は使わない。
  */
 class MusicAppKeepAlive(private val context: Context) {
 
     companion object {
         private const val TAG = "StaaaaandBy"
-        private const val ACTION_MEDIA_BROWSER = "android.media.browse.MediaBrowserService"
+
+        /**
+         * 繋ぐ先の優先順。まずシステム自身が常時 bind している MediaRoute2ProviderService、
+         * 無ければ Android Auto 等が使う MediaBrowserService。
+         */
+        private val BIND_ACTIONS = listOf(
+            "android.media.MediaRoute2ProviderService",
+            "android.media.browse.MediaBrowserService",
+        )
     }
 
     private var boundPackage: String? = null
     private var connection: ServiceConnection? = null
 
-    /** 指定パッケージの MediaBrowserService に繋ぐ。別のアプリに繋いでいたら繋ぎ替える。 */
+    /** 指定パッケージのサービスに繋ぐ。別のアプリに繋いでいたら繋ぎ替える。 */
     fun bind(packageName: String?) {
         if (packageName == boundPackage) return
         unbind()
         if (packageName == null) return
 
-        val service = findMediaBrowserService(packageName)
-        if (service == null) {
-            Log.i(TAG, "keepAlive: no MediaBrowserService in $packageName")
+        val (action, service) = findBindableService(packageName) ?: run {
+            Log.i(TAG, "keepAlive: no bindable service in $packageName")
             return
         }
         val conn = object : ServiceConnection {
@@ -61,7 +68,7 @@ class MusicAppKeepAlive(private val context: Context) {
                 bind(pkg)
             }
         }
-        val intent = Intent(ACTION_MEDIA_BROWSER).setComponent(service)
+        val intent = Intent(action).setComponent(service)
         val ok = runCatching {
             context.bindService(intent, conn, Context.BIND_AUTO_CREATE)
         }.getOrElse { e ->
@@ -87,10 +94,13 @@ class MusicAppKeepAlive(private val context: Context) {
         boundPackage = null
     }
 
-    private fun findMediaBrowserService(packageName: String): ComponentName? {
-        val intent = Intent(ACTION_MEDIA_BROWSER).setPackage(packageName)
-        val resolved = context.packageManager.queryIntentServices(intent, 0)
-        val info = resolved.firstOrNull()?.serviceInfo ?: return null
-        return ComponentName(info.packageName, info.name)
+    private fun findBindableService(packageName: String): Pair<String, ComponentName>? {
+        for (action in BIND_ACTIONS) {
+            val intent = Intent(action).setPackage(packageName)
+            val info = context.packageManager.queryIntentServices(intent, 0)
+                .firstOrNull()?.serviceInfo ?: continue
+            return action to ComponentName(info.packageName, info.name)
+        }
+        return null
     }
 }

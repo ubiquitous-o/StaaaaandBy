@@ -125,6 +125,9 @@ class MediaSessionWatcher(private val context: Context) {
             }
         }
 
+    /** PLAYING 中に端末から音が出ていた見張りの連続回数 */
+    private var localAudioTicks = 0
+
     // 同期し直しの乱発防止: 疑いが続くあいだは間隔を広げていく
     private var resyncCount = 0
     private var nextResyncAt = 0L
@@ -146,7 +149,16 @@ class MediaSessionWatcher(private val context: Context) {
                 val extrapolated = np.positionMs +
                     if (np.isPlaying) (sinceUpdate * np.playbackSpeed).toLong() else 0L
                 if (np.isPlaying && sinceUpdate > 3_000) {
-                    lastKnownRemote = audioManager?.isMusicActive == false
+                    // Spotify は他端末の再生が再開した瞬間に数秒だけ自分でも音声出力を
+                    // 開く癖があるので、「ローカル再生」への判定は音が2回連続で
+                    // 出ているときだけにする。「鏡」への判定は1回でよい
+                    if (audioManager?.isMusicActive == true) {
+                        localAudioTicks++
+                        if (localAudioTicks >= 2) lastKnownRemote = false
+                    } else {
+                        localAudioTicks = 0
+                        lastKnownRemote = true
+                    }
                 }
                 val overrun = np.isPlaying && np.durationMs > 0 &&
                     extrapolated > np.durationMs + STALE_MARGIN_MS
@@ -168,7 +180,9 @@ class MediaSessionWatcher(private val context: Context) {
                     nextResyncAt = now + backoff
                     Log.w(TAG, "watchdog: resync #$resyncCount via $pkg, next in ${backoff / 1000}s")
                     refreshSessions()
-                    if (pkg != null) onResyncNeeded?.invoke(pkg)
+                    if (AUTO_RESYNC_ENABLED && pkg != null) {
+                        onResyncNeeded?.invoke(pkg)
+                    }
                 }
             } else {
                 Log.i(TAG, "watchdog: no now-playing (controller=${controller?.packageName})")
@@ -179,6 +193,18 @@ class MediaSessionWatcher(private val context: Context) {
 
     companion object {
         private const val TAG = "StaaaaandBy"
+
+        /**
+         * 鏡切れを検知したときに自動で同期し直す(音楽アプリの画面を一瞬起動する)か。
+         *
+         * 無効にしている理由: 画面起動は同期し直しに効く唯一の手段だったが、
+         * ロック中は Spotify の画面が「開始したが表示されない」半端な状態になり、
+         * 以後 Spotify は他端末の再生が再開するたびにスマホ側でも音声出力を開く
+         * (マルチポイントの Bluetooth イヤホンがスマホに奪われる)。本当の一時停止と
+         * 鏡切れの区別もつかない。ユーザーが Spotify を普通に開いて閉じれば直る。
+         * 見張り自体はログのために動かし続ける。
+         */
+        private const val AUTO_RESYNC_ENABLED = false
         private const val WATCHDOG_INTERVAL_MS = 15_000L
         private const val STALE_MARGIN_MS = 5_000L
         private const val PAUSED_STALE_MS = 60_000L
