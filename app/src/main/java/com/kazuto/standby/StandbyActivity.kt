@@ -27,8 +27,12 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.kazuto.standby.media.MediaSessionWatcher
 import com.kazuto.standby.ui.StandbyScreen
+import kotlinx.coroutines.launch
 
 /**
  * ロック画面の上に表示するスタンバイ画面。
@@ -44,6 +48,9 @@ class StandbyActivity : ComponentActivity() {
          */
         @Volatile
         var lastVisibleAt: Long = 0L
+
+        /** 時計だけの黒画面のときの明るさ(0f..1f)。時計が読める程度に暗く */
+        private const val CLOCK_ONLY_BRIGHTNESS = 0.05f
     }
 
     private lateinit var mediaWatcher: MediaSessionWatcher
@@ -104,6 +111,20 @@ class StandbyActivity : ComponentActivity() {
         mediaWatcher = MediaSessionWatcher(applicationContext)
         mediaWatcher.onResyncNeeded = ::resyncViaForeground
         mediaWatcher.start()
+
+        // 曲情報が無い(時計だけの黒画面)あいだは画面を暗くする。
+        // Qi 充電の熱で 45°C 付近で充電が止まるので、見る必要の薄い画面の発熱を削る。
+        // 曲情報が戻ったら端末の明るさ設定に戻す
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                mediaWatcher.nowPlaying.collect { np ->
+                    setScreenBrightness(
+                        if (np == null) CLOCK_ONLY_BRIGHTNESS
+                        else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    )
+                }
+            }
+        }
 
         registerReceiver(powerReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_POWER_DISCONNECTED)
@@ -188,6 +209,11 @@ class StandbyActivity : ComponentActivity() {
                 )
             )
         }, 300)
+    }
+
+    private fun setScreenBrightness(value: Float) {
+        if (window.attributes.screenBrightness == value) return
+        window.attributes = window.attributes.also { it.screenBrightness = value }
     }
 
     override fun onDestroy() {
