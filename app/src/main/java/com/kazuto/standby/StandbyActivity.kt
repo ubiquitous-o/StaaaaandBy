@@ -126,7 +126,7 @@ class StandbyActivity : ComponentActivity() {
                     enter = fadeIn(animationSpec = tween(durationMillis = 700)),
                     exit = fadeOut(animationSpec = tween(durationMillis = 200))
                 ) {
-                    StandbyScreen(mediaWatcher = mediaWatcher)
+                    StandbyScreen(mediaWatcher = mediaWatcher, onDismiss = { finish() })
                 }
             }
         }

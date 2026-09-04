@@ -26,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
@@ -116,10 +117,13 @@ private val PortraitLayout = Layout(
 )
 
 @Composable
-fun StandbyScreen(mediaWatcher: MediaSessionWatcher) {
+fun StandbyScreen(mediaWatcher: MediaSessionWatcher, onDismiss: () -> Unit) {
     val now by rememberCurrentTime()
     val battery by rememberBatteryStatus()
     val nowPlaying by mediaWatcher.nowPlaying.collectAsState()
+    // タップ処理の中から最新の値を読むため(pointerInput は再起動しない)
+    val hasMusic by rememberUpdatedState(nowPlaying != null)
+    val dismiss by rememberUpdatedState(onDismiss)
     val isPortrait =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
     val layout = if (isPortrait) PortraitLayout else LandscapeLayout
@@ -128,9 +132,15 @@ fun StandbyScreen(mediaWatcher: MediaSessionWatcher) {
         modifier = Modifier
             .fillMaxSize()
             .background(ScreenBg)
-            // 画面3分割タップ: 左=前の曲 / 中央=再生停止 / 右=次の曲
+            // 曲情報あり: 画面3分割タップ: 左=前の曲 / 中央=再生停止 / 右=次の曲
+            // 曲情報なし(時計だけの黒画面): どこをタップしてもスタンバイを閉じて
+            // 普通のロック画面に戻す。鏡切れ等で操作できない状態からの脱出口
             .pointerInput(mediaWatcher) {
                 detectTapGestures { offset ->
+                    if (!hasMusic) {
+                        dismiss()
+                        return@detectTapGestures
+                    }
                     val third = size.width / 3f
                     when {
                         offset.x < third -> mediaWatcher.skipToPrevious()

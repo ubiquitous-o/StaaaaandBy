@@ -143,6 +143,15 @@ class MediaSessionWatcher(private val context: Context) {
     private var frozenRemote: NowPlaying? = null
     private var fallbackSuspected = false
 
+    /**
+     * 鏡の静かな切れ対策(2026-09-04 実測)。鏡は畳まれずセッションも同じ曲のまま、
+     * 他端末が再生中なのに突然 PAUSED を発行して固まることがある。本当の一時停止と
+     * 見た目は同じで区別できない。見張りが「鏡だったセッションが PAUSED のまま
+     * PAUSED_STALE_MS 更新なし」を検知したら音楽表示を消して時計だけにする。
+     * 何かが PLAYING になった瞬間に解く。
+     */
+    private var staleHidden = false
+
     /** Prefs に保存済みの「鏡で最後に流れていた曲名」(書き込み間引き用のキャッシュ) */
     private var savedRemoteTitle: String? = Prefs.lastRemoteTitle(context)
 
@@ -188,6 +197,11 @@ class MediaSessionWatcher(private val context: Context) {
                         "pos=$extrapolated/${np.durationMs} sinceUpdate=${sinceUpdate}ms" +
                         if (stale) " STALE(${if (overrun) "overrun" else "paused"})" else ""
                 )
+                if (pausedTooLong && !staleHidden) {
+                    staleHidden = true
+                    Log.w(TAG, "watchdog: mirror stale, hiding '${np.title}' (clock only)")
+                    _nowPlaying.value = null
+                }
                 if (!stale) {
                     resyncCount = 0
                     nextResyncAt = 0L
@@ -225,7 +239,7 @@ class MediaSessionWatcher(private val context: Context) {
         private const val AUTO_RESYNC_ENABLED = false
         private const val WATCHDOG_INTERVAL_MS = 15_000L
         private const val STALE_MARGIN_MS = 5_000L
-        private const val PAUSED_STALE_MS = 60_000L
+        private const val PAUSED_STALE_MS = 30_000L
         /** 同期し直しの間隔: 1回目は即、その後 5分 → 15分 → 30分ごと */
         private val RESYNC_BACKOFF_MS = longArrayOf(5 * 60_000L, 15 * 60_000L, 30 * 60_000L)
 
@@ -281,7 +295,7 @@ class MediaSessionWatcher(private val context: Context) {
      *    しまう(2026-09-01 実測: Mac の再生が止まりスマホから鳴り出した)
      */
     private fun tapsUnsafe(): Boolean {
-        if (fallbackSuspected) return true
+        if (fallbackSuspected || staleHidden) return true
         val np = _nowPlaying.value ?: return false
         return lastKnownRemote && !np.isPlaying &&
             SystemClock.elapsedRealtime() - np.positionUpdatedAt > PAUSED_STALE_MS
@@ -385,17 +399,18 @@ class MediaSessionWatcher(private val context: Context) {
         val c = controller
         val metadata = c?.metadata
 
-        // 鏡の巻き戻りを疑っているあいだの扱い
-        if (frozenRemote != null || fallbackSuspected) {
+        // 鏡の巻き戻り・静かな切れを疑っているあいだの扱い
+        if (frozenRemote != null || fallbackSuspected || staleHidden) {
             if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
                 // 再生が始まった: 鏡の復帰か、ユーザー自身の意図的な再生。信じる
                 Log.i(TAG, "playback resumed: unfreeze")
                 frozenRemote = null
                 fallbackSuspected = false
-            } else if (fallbackSuspected) {
-                // 偽セッション: 音楽表示を消して時計だけにする。
-                // 凍結表示のままだとタップが効かない理由が見た目で分からないため、
-                // 「音楽情報が取れなくなった」ことをはっきり見せる
+                staleHidden = false
+            } else if (fallbackSuspected || staleHidden) {
+                // 偽セッション、または PAUSED のまま固まった鏡: 音楽表示を消して
+                // 時計だけにする。凍結表示のままだとタップが効かない理由が見た目で
+                // 分からないため、「音楽情報が取れなくなった」ことをはっきり見せる
                 _nowPlaying.value = null
                 return
             } else if (c == null || metadata == null) {
