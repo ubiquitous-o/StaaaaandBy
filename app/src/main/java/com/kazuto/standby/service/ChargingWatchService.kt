@@ -14,6 +14,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -42,6 +43,12 @@ class ChargingWatchService : Service() {
     companion object {
         private const val CHANNEL_ID = "charging_watch"
         private const val NOTIFICATION_ID = 1
+
+        /** ヒンジ角(度)がこれ未満なら「閉じている」とみなす。閉状態は 0°、全開は 180° */
+        private const val FOLDED_MAX_HINGE_ANGLE = 10f
+
+        /** ヒンジ角の一発読みを待つ上限。超えたら開いている扱いで進める */
+        private const val HINGE_READ_TIMEOUT_MS = 1_000L
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(
@@ -102,8 +109,52 @@ class ChargingWatchService : Service() {
             if (isScreenOn() && !shouldRecoverFromChargingPause()) {
                 return@postDelayed
             }
-            startOrientationWatch()
+            whenNotFolded { startOrientationWatch() }
         }, delayMs)
+    }
+
+    /**
+     * 折りたたみ端末が閉じているあいだは起動しない。
+     *
+     * 閉じた状態で起動すると StandbyActivity は消灯中の内側ディスプレイに作られて
+     * 即 pause→stop→finish し、turnScreenOn でカバー画面のロック画面だけが点く。
+     * それが画面タイムアウトで消えると ACTION_SCREEN_OFF で再び起動され、
+     * 「AODが一瞬→点灯」を30秒周期で繰り返す(Galaxy Z Flip7 で確認)。
+     * ヒンジ角センサー(API 30+)を一発読みして判定し、センサーが無い端末や
+     * 1秒以内に値が来ない場合は従来どおり開いている扱いにする。
+     */
+    private fun whenNotFolded(action: () -> Unit) {
+        val sensorManager = getSystemService(SensorManager::class.java)
+        val hinge = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            sensorManager?.getDefaultSensor(Sensor.TYPE_HINGE_ANGLE)
+        } else {
+            null
+        }
+        if (sensorManager == null || hinge == null) {
+            action()
+            return
+        }
+        var settled = false
+        lateinit var timeout: Runnable
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                if (settled) return
+                settled = true
+                sensorManager.unregisterListener(this)
+                handler.removeCallbacks(timeout)
+                if (event.values[0] >= FOLDED_MAX_HINGE_ANGLE) action()
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        timeout = Runnable {
+            if (settled) return@Runnable
+            settled = true
+            sensorManager.unregisterListener(listener)
+            action()
+        }
+        sensorManager.registerListener(listener, hinge, SensorManager.SENSOR_DELAY_NORMAL)
+        handler.postDelayed(timeout, HINGE_READ_TIMEOUT_MS)
     }
 
     private var orientationListener: SensorEventListener? = null
@@ -169,10 +220,12 @@ class ChargingWatchService : Service() {
     }
 
     private fun launchStandby() {
-        startActivity(
-            Intent(this, StandbyActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
+        whenNotFolded {
+            startActivity(
+                Intent(this, StandbyActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
     }
 
     private fun shouldRecoverFromChargingPause(): Boolean {
