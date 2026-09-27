@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
+import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.Uri
@@ -67,6 +68,9 @@ class MediaSessionWatcher(private val context: Context) : PlaybackSource {
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
     override val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying
 
+    private val _upNext = MutableStateFlow<TrackRef?>(null)
+    override val upNext: StateFlow<TrackRef?> = _upNext
+
     private var controller: MediaController? = null
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -90,9 +94,51 @@ class MediaSessionWatcher(private val context: Context) : PlaybackSource {
             publish()
         }
 
+        override fun onQueueChanged(queue: MutableList<MediaSession.QueueItem>?) {
+            publishUpNext()
+        }
+
         override fun onSessionDestroyed() {
             Log.w(TAG, "session destroyed: ${controller?.packageName}")
             refreshSessions()
+        }
+    }
+
+    /**
+     * セッションのキューから「次の曲」を取り出す(歌詞の先読み用)。
+     * 再生中の項目は PlaybackState.activeQueueItemId で分かる。無ければ
+     * いまの曲名と違う最初の項目を次とみなす。曲の長さはキュー項目に無いことが多い。
+     */
+    private fun publishUpNext() {
+        val c = controller
+        val queue = c?.queue
+        if (c == null || queue.isNullOrEmpty() || _nowPlaying.value == null) {
+            _upNext.value = null
+            return
+        }
+        val activeId = c.playbackState?.activeQueueItemId ?: -1L
+        val idx = queue.indexOfFirst { it.queueId == activeId }
+        val currentTitle = c.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+        val next = if (idx >= 0 && idx + 1 < queue.size) {
+            queue[idx + 1]
+        } else {
+            queue.firstOrNull { it.description.title?.toString() != currentTitle }
+        }
+        val d = next?.description
+        val title = d?.title?.toString().orEmpty()
+        if (title.isBlank()) {
+            _upNext.value = null
+            return
+        }
+        val ref = TrackRef(
+            title = title,
+            artist = d?.subtitle?.toString().orEmpty(),
+            album = null,
+            durationMs = d?.extras?.getLong(MediaMetadata.METADATA_KEY_DURATION, 0L) ?: 0L,
+        )
+        if (_upNext.value != ref) {
+            Log.i(TAG, "up next (queue ${queue.size}, active=$idx): '${ref.title}' / '${ref.artist}' dur=${ref.durationMs}")
+            _upNext.value = ref
         }
     }
 
@@ -475,6 +521,7 @@ class MediaSessionWatcher(private val context: Context) : PlaybackSource {
             savedRemoteTitle = title
             Prefs.setLastRemoteTitle(context, title)
         }
+        publishUpNext()
     }
 
     /**

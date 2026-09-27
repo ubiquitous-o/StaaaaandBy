@@ -28,7 +28,17 @@
         return [1080, Math.round(1080 * h / w / 2) * 2];
     };
 
-    const DPR_CAP = 2;
+    // Adaptive quality. The phone throttles its clocks hard when it gets hot on the Qi pad
+    // (measured: 1.1 GHz instead of 3+, frames 8-60 ms instead of 2 ms). When frames run long,
+    // draw at 1 CSS px per canvas px (a quarter of the pixels) and at 30 fps; when they are
+    // quick again, go back up. Text this large still reads fine at half resolution.
+    let DPR_CAP = 2;
+    let MAX_FPS = 60;
+    const SLOW_MS = 12, FAST_MS = 4;
+    let slowWindows = 0, fastWindows = 0;
+    // Draw at most MAX_FPS often. The Flip's screen runs at 120 Hz, but JIZURA plans its motion at
+    // 60 fps, so drawing every refresh only doubles the GPU work (and the heat on the Qi pad).
+    const minFrameMs = () => 1000 / MAX_FPS - 1;
 
     let song = null;             // { key, title, artist, durationMs, lyrics }
     let look = null;             // JIZURA random look (omakase) on top of the default project
@@ -36,6 +46,7 @@
     let planAspect = null;       // JIZURA aspect key the plan was built for
     let anchor = null;           // { positionMs, playing, speed, at: performance.now() }
     let lastT = -1;
+    let lastDrawAt = 0;
     // frame-time stats, logged every 10 s (visible in logcat through the WebChromeClient)
     let statFrames = 0, statDraw = 0, statMax = 0, statSince = performance.now(), statTicks = 0;
 
@@ -107,22 +118,48 @@
         const now = performance.now();
         if (now - statSince >= 10000) {
             if (statFrames) {
+                const avg = statDraw / statFrames;
                 console.log(`perf: ${(statTicks * 1000 / (now - statSince)).toFixed(1)} ticks/s, drew ${statFrames}, ` +
-                    `draw avg ${(statDraw / statFrames).toFixed(1)} ms, max ${statMax.toFixed(1)} ms, canvas ${canvas.width}x${canvas.height}`);
+                    `draw avg ${avg.toFixed(1)} ms, max ${statMax.toFixed(1)} ms, canvas ${canvas.width}x${canvas.height}, fps cap ${MAX_FPS}`);
+                adapt(avg, statFrames, statTicks * 1000 / (now - statSince));
             }
             statFrames = 0; statDraw = 0; statMax = 0; statTicks = 0; statSince = now;
         }
         if (!plan || !song) return;
+        if (now - lastDrawAt < minFrameMs()) return;
         const t = Math.min(Math.max(0, positionMs() / 1000), plan.duration - 1e-3);
         // Paused: the picture does not change, so do not burn the GPU redrawing it.
         if (t === lastT) return;
         lastT = t;
+        lastDrawAt = now;
         const t0 = performance.now();
         // fast: skip JIZURA's blur filters and glow. Measured on a Galaxy Z Flip7: with them the
         // page managed 4-6 fps (60-140 ms per frame); without them 110+ fps at full resolution.
         renderer.frame(ctx, plan, t, { scale: canvas.width / plan.W, fast: true, noHud: true });
         const dt = performance.now() - t0;
         statFrames++; statDraw += dt; if (dt > statMax) statMax = dt;
+    }
+
+    /**
+     * Step quality down after 2 slow 10 s windows, back up after 3 quick ones.
+     * A window is slow when frames took long to draw OR few of them made it to the screen
+     * (the compositor, not this script, is the bottleneck on a throttled phone); windows with
+     * hardly any draws (paused, track change) are ignored rather than resetting the count.
+     */
+    function adapt(avgMs, drawn, ticksPerS) {
+        if (drawn < 20) return;
+        const slow = avgMs > SLOW_MS || ticksPerS < 20;
+        const fast = avgMs < FAST_MS && ticksPerS > 50;
+        if (slow) { slowWindows++; fastWindows = 0; } else if (fast) { fastWindows++; slowWindows = 0; }
+        if (slowWindows >= 2 && (DPR_CAP > 1 || MAX_FPS > 30)) {
+            DPR_CAP = 1; MAX_FPS = 30; slowWindows = 0;
+            console.log('perf: frames are slow, dropping to half resolution / 30 fps');
+            sizeCanvas();
+        } else if (fastWindows >= 3 && (DPR_CAP < 2 || MAX_FPS < 60)) {
+            DPR_CAP = 2; MAX_FPS = 60; fastWindows = 0;
+            console.log('perf: frames are quick, back to full resolution / 60 fps');
+            sizeCanvas();
+        }
     }
 
     let resizeTimer = 0;

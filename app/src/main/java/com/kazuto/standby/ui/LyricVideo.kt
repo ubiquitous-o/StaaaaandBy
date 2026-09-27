@@ -28,17 +28,47 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 
 /**
+ * リリックビデオのページ(WebView)をスタンバイ画面の寿命で1枚だけ持つ。
+ * 曲ごとに作り直すと JIZURA の読み込み(2MB の JS)が毎回走って切り替えが遅れるので、
+ * 歌詞のない曲のあいだも捨てずに取っておく。
+ */
+@Composable
+fun rememberLyricPage(): LyricPageHolder {
+    val context = LocalContext.current
+    val holder = remember { LyricPageHolder(context) }
+    DisposableEffect(holder) { onDispose { holder.destroy() } }
+    return holder
+}
+
+/**
+ * ページは最初に画面に貼るときに作る。画面に付いていない WebView には Chromium が GPU を
+ * 与えないので、貼る前に読み込むと canvas がソフト描画で初期化されたまま戻らない(実測: 7 fps)。
+ * 一度作ったら歌詞のない曲のあいだも捨てない。
+ */
+class LyricPageHolder(private val context: Context) {
+    var page: LyricPage? = null
+        private set
+
+    fun getOrCreate(): LyricPage = page ?: LyricPage(context).also { page = it }
+
+    fun destroy() {
+        page?.destroy()
+        page = null
+    }
+}
+
+/**
  * JIZURA(assets/lyric)を WebView で動かすリリックビデオ。
  * 曲(同期歌詞)と再生位置の基準点を JS 側に渡し、描画は JS が毎フレーム行う。
  * WebView はタッチを受け取らないので、画面3分割のタップ操作は外側の Box に届く。
  */
 @Composable
-fun LyricVideo(lyrics: SyncedLyrics, playing: NowPlaying, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val page = remember { LyricPage(context) }
-    DisposableEffect(page) { onDispose { page.destroy() } }
-
-    AndroidView(factory = { page.view }, modifier = modifier)
+fun LyricVideo(holder: LyricPageHolder, lyrics: SyncedLyrics, playing: NowPlaying, modifier: Modifier = Modifier) {
+    // factory は画面に貼る直前に呼ばれる: ここで初めてページを作り、貼られた状態で読み込ませる
+    AndroidView(factory = { holder.getOrCreate().view }, modifier = modifier)
+    val page = holder.getOrCreate()
+    // 画面から外れたら(歌詞のない曲になったら)描画を止める。ページ自体は生かしておく
+    DisposableEffect(page) { onDispose { page.clear() } }
 
     val ready by page.ready.collectAsState()
     LaunchedEffect(ready, lyrics.key) {
@@ -57,7 +87,7 @@ private class PassThroughWebView(context: Context) : WebView(context) {
     override fun onTouchEvent(event: MotionEvent?): Boolean = false
 }
 
-private class LyricPage(context: Context) {
+class LyricPage(context: Context) {
     companion object {
         private const val TAG = "StaaaaandBy"
         private const val URL = "https://appassets.androidplatform.net/assets/lyric/index.html"
@@ -113,6 +143,10 @@ private class LyricPage(context: Context) {
         }
         val json = JSONObject().put("positionMs", pos).put("playing", np.isPlaying).put("speed", np.playbackSpeed)
         view.evaluateJavascript("window.lyric && window.lyric.setAnchor($json)", null)
+    }
+
+    fun clear() {
+        if (ready.value) view.evaluateJavascript("window.lyric && window.lyric.clear()", null)
     }
 
     fun destroy() {

@@ -77,7 +77,7 @@ Please read Spotify's [Developer Policy](https://developer.spotify.com/policy) b
 
 ## Privacy
 
-Nothing is collected. Notification access is used solely to read the media sessions of music apps (title, artist, artwork, playback state) — notifications themselves are never read or stored. The INTERNET permission is used for: album artwork; the title, artist, and duration of the current track sent to LRCLIB when the lyric video is on; Google Fonts requests made by the lyric video page; and, only if you connect your own Spotify app, the Spotify Web API (your tokens are stored on the phone and sent only to `accounts.spotify.com` / `api.spotify.com`). There is no server of this project's own.
+Nothing is collected. Notification access is used solely to read the media sessions of music apps (title, artist, artwork, playback state) — notifications themselves are never read or stored. The INTERNET permission is used for: album artwork; the title, artist, and duration of the current and next track sent to LRCLIB when the lyric video is on (the lyrics it returns are cached in the app's cache directory, up to 300 songs, so a song you have heard before needs no network); Google Fonts requests made by the lyric video page; and, only if you connect your own Spotify app, the Spotify Web API (your tokens are stored on the phone and sent only to `accounts.spotify.com` / `api.spotify.com`). There is no server of this project's own.
 
 ## Build
 

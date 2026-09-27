@@ -59,7 +59,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kazuto.standby.R
-import com.kazuto.standby.lyrics.SyncedLyrics
+import com.kazuto.standby.lyrics.LyricsState
 import com.kazuto.standby.media.PlaybackSource
 import com.kazuto.standby.media.NowPlaying
 import kotlinx.coroutines.delay
@@ -141,18 +141,22 @@ private val PortraitLyricLayout = Layout(
 
 /**
  * @param source 再生状態と操作の供給元
- * @param lyrics 再生中の曲の同期歌詞。null なら(または鍵が合わなければ)スリットスキャンを出す
+ * @param lyrics 再生中の曲の同期歌詞と問い合わせ状態。歌詞があればリリックビデオ、
+ *   問い合わせ中は黒(時計だけ)、無ければスリットスキャン
+ * @param lyricVideoEnabled リリックビデオ機能がオンか(オンならページを先に用意しておく)
  */
 @Composable
 fun StandbyScreen(
     source: PlaybackSource,
-    lyrics: StateFlow<SyncedLyrics?>,
+    lyrics: StateFlow<LyricsState>,
+    lyricVideoEnabled: Boolean,
     onDismiss: () -> Unit,
 ) {
     val now by rememberCurrentTime()
     val battery by rememberBatteryStatus()
     val nowPlaying by source.nowPlaying.collectAsState()
-    val syncedLyrics by lyrics.collectAsState()
+    val lyricsState by lyrics.collectAsState()
+    val lyricPage = if (lyricVideoEnabled) rememberLyricPage() else null
     // タップ処理の中から最新の値を読むため(pointerInput は再起動しない)
     val hasMusic by rememberUpdatedState(nowPlaying != null)
     val dismiss by rememberUpdatedState(onDismiss)
@@ -160,7 +164,10 @@ fun StandbyScreen(
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
     val playing = nowPlaying
     // 同期歌詞がいまの曲のものならリリックビデオ、そうでなければスリットスキャン
-    val lyricVideo = syncedLyrics?.takeIf { playing != null && it.key == playing.trackKey }
+    val lyricVideo = lyricsState.lyrics?.takeIf { playing != null && it.key == playing.trackKey && lyricPage != null }
+    // いまの曲の歌詞を問い合わせ中: 結果が出るまでスリットスキャンを出さない
+    // (先に出すと歌詞ビデオに切り替わる瞬間にちらつく)
+    val lyricPending = playing != null && lyricsState.pendingKey == playing.trackKey
     val layout = when {
         lyricVideo != null && isPortrait -> PortraitLyricLayout
         lyricVideo != null -> LandscapeLyricLayout
@@ -191,13 +198,14 @@ fun StandbyScreen(
             }
     ) {
         val art = playing?.albumArt
-        if (lyricVideo != null && playing != null) {
+        if (lyricVideo != null && playing != null && lyricPage != null) {
             LyricVideo(
+                holder = lyricPage,
                 lyrics = lyricVideo,
                 playing = playing,
                 modifier = Modifier.fillMaxSize()
             )
-        } else if (art != null) {
+        } else if (art != null && !lyricPending) {
             // 毎フレーム再生位置を計算してスリットを滑らかに動かす。
             // 一時停止中は値が変わらないので再描画も起きない。
             val progress by produceState(initialValue = 0f, playing) {

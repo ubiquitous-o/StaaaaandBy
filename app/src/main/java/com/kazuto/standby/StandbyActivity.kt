@@ -31,7 +31,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.kazuto.standby.lyrics.LyricsRepository
-import com.kazuto.standby.lyrics.SyncedLyrics
+import com.kazuto.standby.lyrics.LyricsState
 import com.kazuto.standby.media.MediaSessionWatcher
 import com.kazuto.standby.media.PlaybackSource
 import com.kazuto.standby.spotify.SpotifyAuth
@@ -69,7 +69,7 @@ class StandbyActivity : ComponentActivity() {
     /** 再生状態の供給元。Spotify に接続済みなら Web API、そうでなければ端末の MediaSession */
     private lateinit var source: PlaybackSource
     private var lyricsRepo: LyricsRepository? = null
-    private var lyrics: StateFlow<SyncedLyrics?> = MutableStateFlow(null)
+    private var lyrics: StateFlow<LyricsState> = MutableStateFlow(LyricsState())
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -144,9 +144,9 @@ class StandbyActivity : ComponentActivity() {
         }
         source.start()
         if (Prefs.lyricVideo(this)) {
-            lyricsRepo = LyricsRepository(lifecycleScope).also {
-                it.follow(source.nowPlaying)
-                lyrics = it.lyrics
+            lyricsRepo = LyricsRepository(applicationContext, lifecycleScope).also {
+                it.follow(source.nowPlaying, source.upNext)
+                lyrics = it.state
             }
         }
 
@@ -185,7 +185,12 @@ class StandbyActivity : ComponentActivity() {
                     enter = fadeIn(animationSpec = tween(durationMillis = 700)),
                     exit = fadeOut(animationSpec = tween(durationMillis = 200))
                 ) {
-                    StandbyScreen(source = source, lyrics = lyrics, onDismiss = { finish() })
+                    StandbyScreen(
+                        source = source,
+                        lyrics = lyrics,
+                        lyricVideoEnabled = lyricsRepo != null,
+                        onDismiss = { finish() },
+                    )
                 }
             }
         }

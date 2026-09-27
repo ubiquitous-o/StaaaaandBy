@@ -7,8 +7,13 @@ import kotlinx.coroutines.flow.StateFlow
  *  - [MediaSessionWatcher]: 端末上の音楽アプリの MediaSession(他端末の鏡を含む)
  *  - [com.kazuto.standby.spotify.SpotifyWebPlayer]: Spotify Web API のポーリング
  */
+/** 次に再生される曲の手がかり。歌詞の先読みに使う。durationMs は不明なら 0 */
+data class TrackRef(val title: String, val artist: String, val album: String?, val durationMs: Long)
+
 interface PlaybackSource {
     val nowPlaying: StateFlow<NowPlaying?>
+    /** 次に再生される曲。分からなければ null */
+    val upNext: StateFlow<TrackRef?>
     fun start()
     fun stop()
     fun playPause()

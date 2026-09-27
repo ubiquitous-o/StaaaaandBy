@@ -7,6 +7,7 @@ import android.util.Log
 import com.kazuto.standby.media.ArtLoader
 import com.kazuto.standby.media.NowPlaying
 import com.kazuto.standby.media.PlaybackSource
+import com.kazuto.standby.media.TrackRef
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,6 +44,9 @@ class SpotifyWebPlayer(private val context: Context) : PlaybackSource {
 
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
     override val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying
+
+    private val _upNext = MutableStateFlow<TrackRef?>(null)
+    override val upNext: StateFlow<TrackRef?> = _upNext
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var pollJob: Job? = null
@@ -131,6 +135,36 @@ class SpotifyWebPlayer(private val context: Context) : PlaybackSource {
         return POLL_MS
     }
 
+    /** 曲が変わるたびに1回、キューの先頭(次の曲)を取って歌詞の先読みに回す */
+    private fun fetchQueue() {
+        scope.launch {
+            try {
+                val res = SpotifyAuth.api(context, "GET", "/me/player/queue")
+                val q = JSONObject(res.body).optJSONArray("queue")
+                val item = (0 until (q?.length() ?: 0))
+                    .mapNotNull { q?.optJSONObject(it) }
+                    .firstOrNull { it.optString("type") == "track" }
+                val ref = item?.let {
+                    val artists = it.optJSONArray("artists")
+                    TrackRef(
+                        title = it.optString("name"),
+                        artist = (0 until (artists?.length() ?: 0))
+                            .mapNotNull { i -> artists?.optJSONObject(i)?.optString("name") }
+                            .joinToString(", "),
+                        album = it.optJSONObject("album")?.optString("name")?.ifEmpty { null },
+                        durationMs = it.optLong("duration_ms", 0),
+                    )
+                }
+                if (_upNext.value != ref) {
+                    Log.i(TAG, "spotify: up next '${ref?.title}' / '${ref?.artist}'")
+                    _upNext.value = ref
+                }
+            } catch (e: SpotifyAuth.SpotifyException) {
+                Log.w(TAG, "spotify queue failed: ${e.message}")
+            }
+        }
+    }
+
     private fun read(s: JSONObject, item: JSONObject, at: Long) {
         val id = item.optString("id").ifEmpty { item.optString("uri") }
         val sameTrack = id == trackId
@@ -155,6 +189,7 @@ class SpotifyWebPlayer(private val context: Context) : PlaybackSource {
         if (!sameTrack) {
             trackId = id
             Log.i(TAG, "spotify: track '${item.optString("name")}' playing=$playing")
+            fetchQueue()
         }
         if (artUrl != null && art?.first != artUrl) {
             art = artUrl to null
