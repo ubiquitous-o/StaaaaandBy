@@ -58,6 +58,12 @@ class StandbyActivity : ComponentActivity() {
 
         /** 時計だけの黒画面のときの明るさ(0f..1f)。時計が読める程度に暗く */
         private const val CLOCK_ONLY_BRIGHTNESS = 0.05f
+
+        /** 電源が抜けてから閉じるまでの猶予。取り上げたらすぐ閉じたいので短く */
+        private const val DISCONNECT_GRACE_MS = 1_500L
+
+        /** 満充電中の猶予。Samsung の充電器オンオフ(切断は約2秒)をまたげる長さ */
+        private const val FULL_DISCONNECT_GRACE_MS = 3_000L
     }
 
     /** 再生状態の供給元。Spotify に接続済みなら Web API、そうでなければ端末の MediaSession */
@@ -79,8 +85,13 @@ class StandbyActivity : ComponentActivity() {
     private val powerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                Intent.ACTION_POWER_DISCONNECTED ->
-                    handler.postDelayed(delayedFinish, 1_500)
+                Intent.ACTION_POWER_DISCONNECTED -> {
+                    // 満充電(100%)になると Samsung は Qi 充電器を約10秒周期で2秒ほど切って戻す
+                    // (2026-09-27 実測)。1.5秒で閉じるとその穴にはまって閉じる→サービスが出し直す
+                    // のちらつきになるので、満充電のときだけ長めに待つ
+                    val grace = if (isBatteryFull()) FULL_DISCONNECT_GRACE_MS else DISCONNECT_GRACE_MS
+                    handler.postDelayed(delayedFinish, grace)
+                }
                 Intent.ACTION_POWER_CONNECTED ->
                     handler.removeCallbacks(delayedFinish)
             }
@@ -90,6 +101,14 @@ class StandbyActivity : ComponentActivity() {
     private fun isPluggedIn(): Boolean {
         val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         return (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+    }
+
+    private fun isBatteryFull(): Boolean {
+        val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return false
+        if (battery.getIntExtra(BatteryManager.EXTRA_STATUS, -1) == BatteryManager.BATTERY_STATUS_FULL) return true
+        val level = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        return level >= 0 && scale > 0 && level * 100 / scale >= 100
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
