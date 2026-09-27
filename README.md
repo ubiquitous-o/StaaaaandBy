@@ -1,5 +1,7 @@
 # StaaaaandBy
 
+[日本語](README.ja.md)
+
 An Android app inspired by the iPhone's StandBy mode. While charging on a Qi pad, it shows a clock and the artwork of the currently playing track on top of the lock screen.
 
 ![Demo](docs/demo.gif)
@@ -49,7 +51,7 @@ If you play music on another device — e.g. Spotify on your Mac with Spotify Co
 
 The third setup step lists the supported music apps installed on the phone, shows whether each one is exempt from battery optimization, and opens its app settings with one tap. For each app, choose **Battery → Unrestricted**. This applies to any music app, not just Spotify. It makes the kill much less likely, though a true low-memory situation can still take the app down — reopening the music app restores the display.
 
-On top of that, StaaaaandBy actively keeps the music app alive while the standby screen is showing: it holds a `bindService` connection to the app's public `MediaBrowserService` (the same entry point Android Auto uses). A process bound by a foreground app isn't treated as a background app, so Samsung's nightly "auto optimization" leaves it alone, and if it does die, the bind restarts it right away.
+On top of that, StaaaaandBy actively keeps the music app alive while the standby screen is showing: it holds a `bindService` connection to the app's public `MediaRoute2ProviderService` (the one the system itself binds for Spotify Connect), falling back to its `MediaBrowserService` (the entry point Android Auto uses). A process bound by a foreground app isn't treated as a background app, so Samsung's nightly "auto optimization" leaves it alone, and if it does die, the bind restarts it right away.
 
 There is a second failure mode: the phone's Spotify stays alive but its Connect mirror silently desyncs — it keeps reporting the last state it saw (often "paused") while the Mac plays on. A watchdog logs the session state every 15 s and flags a session that looks stale (still "playing" but the extrapolated position ran past the end of the track, or "paused" for over 30 seconds on a session that was previously mirroring another device — detected via `AudioManager.isMusicActive()`: playing, but no audio on this phone). Everything is logged under the `StaaaaandBy` logcat tag.
 
@@ -61,7 +63,7 @@ The mirror can also die without being torn down: the session keeps the same trac
 
 ## Lyric video (v1.1.0)
 
-Turn on **Lyric video when synced lyrics exist** in the setup screen. For every song StaaaaandBy asks [LRCLIB](https://lrclib.net) (a public, key-less community database) for time-synced lyrics by title, artist and duration. When it finds them, the slit-scan artwork is replaced by a lyric video rendered by [JIZURA](https://github.com/852wa/JIZURA), 852wa's browser engine for 文字PV, running in a WebView from the bundled `assets/lyric/`. The look is seeded by the track, so a song always opens the same way. Songs without synced lyrics show the artwork exactly as before. The tap zones do not change (left = previous, middle = play/pause, right = next); the clock shrinks to the top edge while lyrics are showing. Both orientations are handled: JIZURA plans the video for the aspect closest to the screen (16:9 landscape, 9:16 portrait on the Flip).
+Turn on **Lyric video when synced lyrics exist** in the setup screen. For every song StaaaaandBy asks [LRCLIB](https://lrclib.net) (a public, key-less community database) for time-synced lyrics by title, artist and duration. When it finds them, the slit-scan artwork is replaced by a lyric video rendered by [JIZURA](https://github.com/852wa/JIZURA), 852wa's browser engine for 文字PV, running in a WebView from the bundled `assets/lyric/`. The look is seeded by the track, so a song always opens the same way. Songs without synced lyrics show the artwork exactly as before. The tap zones do not change (left = previous, middle = play/pause, right = next); while lyrics are showing, the clock moves to the top-left corner and the track title and artist to the top-right, small enough to stay out of the way. Both orientations are handled: the page teaches JIZURA the screen's exact aspect (3:7 portrait, 7:3 landscape on the Flip), so the video fills the screen with no letterbox. JIZURA's own HUD (title bar, timecode, lyric counter) is turned off, and so are its blur filters and glow — on a Galaxy Z Flip7's WebView those cost 60-140 ms per frame; without them the page runs at 110+ fps.
 
 This follows [jizura-sync](https://github.com/Saqoosha/jizura-sync) by Saqoosha, whose LRC-to-JIZURA conversion is used as is. Fonts load from Google Fonts on demand, so the first song after install needs a network connection for the full look.
 
@@ -73,7 +75,7 @@ Please read Spotify's [Developer Policy](https://developer.spotify.com/policy) b
 
 ## Privacy
 
-Everything stays on your device. Notification access is used solely to read the media sessions of music apps (title, artist, artwork, playback state) — notifications themselves are never read or stored. The INTERNET permission is used only to fetch album artwork. Nothing is collected or sent anywhere.
+Nothing is collected. Notification access is used solely to read the media sessions of music apps (title, artist, artwork, playback state) — notifications themselves are never read or stored. The INTERNET permission is used for: album artwork; the title, artist, and duration of the current track sent to LRCLIB when the lyric video is on; Google Fonts requests made by the lyric video page; and, only if you connect your own Spotify app, the Spotify Web API (your tokens are stored on the phone and sent only to `accounts.spotify.com` / `api.spotify.com`). There is no server of this project's own.
 
 ## Build
 
