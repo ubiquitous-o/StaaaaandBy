@@ -36,7 +36,11 @@ data class NowPlaying(
     /** positionMs を取得した時点の SystemClock.elapsedRealtime() */
     val positionUpdatedAt: Long,
     val playbackSpeed: Float,
+    val album: String? = null,
 ) {
+    /** 同じ曲かどうかの鍵(曲名・アーティスト・長さ秒)。歌詞の照合に使う */
+    val trackKey: String get() = "$title\u0001$artist\u0001${durationMs / 1000}"
+
     /** 現在の再生進行度 0f..1f。elapsedRealtime は SystemClock.elapsedRealtime() を渡す。 */
     fun progressAt(elapsedRealtime: Long): Float {
         if (durationMs <= 0) return 0f
@@ -53,7 +57,7 @@ data class NowPlaying(
  * 端末上のアクティブな MediaSession を監視して、再生中の曲情報を StateFlow で公開する。
  * 通知アクセス許可(NowPlayingListenerService の有効化)が前提。
  */
-class MediaSessionWatcher(private val context: Context) {
+class MediaSessionWatcher(private val context: Context) : PlaybackSource {
 
     private val sessionManager =
         context.getSystemService(MediaSessionManager::class.java)
@@ -61,7 +65,7 @@ class MediaSessionWatcher(private val context: Context) {
         ComponentName(context, NowPlayingListenerService::class.java)
 
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
-    val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying
+    override val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying
 
     private var controller: MediaController? = null
 
@@ -261,7 +265,7 @@ class MediaSessionWatcher(private val context: Context) {
         )
     }
 
-    fun start() {
+    override fun start() {
         Log.i(TAG, "start")
         try {
             sessionManager.addOnActiveSessionsChangedListener(sessionsListener, listenerComponent)
@@ -274,7 +278,7 @@ class MediaSessionWatcher(private val context: Context) {
         handler.postDelayed(watchdog, WATCHDOG_INTERVAL_MS)
     }
 
-    fun stop() {
+    override fun stop() {
         Log.i(TAG, "stop")
         handler.removeCallbacks(watchdog)
         keepAlive.unbind()
@@ -301,7 +305,7 @@ class MediaSessionWatcher(private val context: Context) {
             SystemClock.elapsedRealtime() - np.positionUpdatedAt > PAUSED_STALE_MS
     }
 
-    fun playPause() {
+    override fun playPause() {
         if (tapsUnsafe()) {
             Log.w(TAG, "tap ignored: possibly desynced mirror (would steal playback)")
             return
@@ -314,7 +318,7 @@ class MediaSessionWatcher(private val context: Context) {
         }
     }
 
-    fun skipToNext() {
+    override fun skipToNext() {
         if (tapsUnsafe()) {
             Log.w(TAG, "tap ignored: possibly desynced mirror (would steal playback)")
             return
@@ -322,7 +326,7 @@ class MediaSessionWatcher(private val context: Context) {
         controller?.transportControls?.skipToNext()
     }
 
-    fun skipToPrevious() {
+    override fun skipToPrevious() {
         if (tapsUnsafe()) {
             Log.w(TAG, "tap ignored: possibly desynced mirror (would steal playback)")
             return
@@ -461,6 +465,7 @@ class MediaSessionWatcher(private val context: Context) {
             positionUpdatedAt = state?.lastPositionUpdateTime
                 ?: android.os.SystemClock.elapsedRealtime(),
             playbackSpeed = state?.playbackSpeed?.takeIf { it > 0f } ?: 1f,
+            album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM),
         )
 
         // 鏡で再生中の曲名を覚えておく(偽セッションの見分けに使う)

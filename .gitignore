@@ -10,3 +10,4 @@ captures/
 keystore.properties
 *.jks
 *.keystore
+.claude/launch.json

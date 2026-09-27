@@ -24,7 +24,9 @@ An Android app inspired by the iPhone's StandBy mode. While charging on a Qi pad
 
 ## Install
 
-1. Download the latest APK from [Releases](https://github.com/ubiquitous-o/StaaaaandBy/releases)
+There is no prebuilt APK: this is source code for personal use, like the projects it builds on (see [Lyric video](#lyric-video-v110) and [Spotify Web API](#spotify-web-api-optional) for why). Build it yourself and sideload it:
+
+1. Build a debug APK (see [Build](#build)) and copy it to the phone, or install it directly with `adb install`
 2. Open the APK on your phone. You may need to allow "Install unknown apps" for your browser or file manager, and Play Protect may show a warning for apps from unknown developers — that's expected for sideloaded apps
 3. Follow the three setup steps shown in the app (below)
 
@@ -57,6 +59,18 @@ The mirror can also die without being torn down: the session keeps the same trac
 
 **If the display does get stuck anyway, open Spotify on the phone once and go back home** — Spotify only refreshes its Connect state when its own UI comes to the foreground. StaaaaandBy deliberately does not automate this: launching Spotify's UI while the phone is locked leaves it in a half-started state, after which Spotify opens a local audio stream every time playback resumes on the other device, and multipoint Bluetooth earbuds jump to the phone. The code for that automatic resync is still in the repo (`AUTO_RESYNC_ENABLED`), disabled for that reason.
 
+## Lyric video (v1.1.0)
+
+Turn on **Lyric video when synced lyrics exist** in the setup screen. For every song StaaaaandBy asks [LRCLIB](https://lrclib.net) (a public, key-less community database) for time-synced lyrics by title, artist and duration. When it finds them, the slit-scan artwork is replaced by a lyric video rendered by [JIZURA](https://github.com/852wa/JIZURA), 852wa's browser engine for 文字PV, running in a WebView from the bundled `assets/lyric/`. The look is seeded by the track, so a song always opens the same way. Songs without synced lyrics show the artwork exactly as before. The tap zones do not change (left = previous, middle = play/pause, right = next); the clock shrinks to the top edge while lyrics are showing. Both orientations are handled: JIZURA plans the video for the aspect closest to the screen (16:9 landscape, 9:16 portrait on the Flip).
+
+This follows [jizura-sync](https://github.com/Saqoosha/jizura-sync) by Saqoosha, whose LRC-to-JIZURA conversion is used as is. Fonts load from Google Fonts on demand, so the first song after install needs a network connection for the full look.
+
+## Spotify Web API (optional)
+
+The phone-side Spotify Connect mirror described above is the weak link: it silently desyncs minutes into a session and there is nothing an app can do about it. As an alternative, StaaaaandBy can follow your account's playback through the **Spotify Web API**, which reports what is playing on any device straight from Spotify's servers. Create your own Spotify app at [developer.spotify.com](https://developer.spotify.com/dashboard) (Web API; the owner needs Premium), register the Redirect URI `staaaaandby://spotify-callback`, paste the Client ID into the Spotify card in the setup screen and connect. Sign-in is Authorization Code with PKCE, so there is no client secret; tokens stay on the phone and go only to Spotify. Development-mode apps allow up to 5 accounts listed under the app's User Management. While connected, the standby screen polls `GET /me/player` once a second and extrapolates in between; the tap controls call the Web API, so they act on whichever device is playing and can never hijack playback onto the phone.
+
+Please read Spotify's [Developer Policy](https://developer.spotify.com/policy) before enabling both features together: it forbids synchronizing Spotify's recordings with visual media, which a lyric video timed to the track is. This is a personal experiment — use your own Spotify app, keep it to your own accounts, and do not offer it as a service. Lyrics come from LRCLIB's community data at runtime and are not licensed or redistributed by this project.
+
 ## Privacy
 
 Everything stays on your device. Notification access is used solely to read the media sessions of music apps (title, artist, artwork, playback state) — notifications themselves are never read or stored. The INTERNET permission is used only to fetch album artwork. Nothing is collected or sent anywhere.
@@ -64,24 +78,32 @@ Everything stays on your device. Notification access is used solely to read the 
 ## Build
 
 - Requires JDK 17 and the Android SDK (compileSdk 35). `org.gradle.java.home` in `gradle.properties` points to Homebrew's `openjdk@17`
-- `./gradlew :app:assembleDebug`
+- `./gradlew :app:assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`
+- A release build (`assembleRelease`) is signed with the keystore named in `keystore.properties` (not in the repo); without one, use the debug build
 
 ## License
 
 - Code: [MIT](LICENSE)
 - The bundled [Fira Code](https://github.com/tonsky/FiraCode) font is licensed under the SIL Open Font License 1.1 — see [licenses/FiraCode-OFL.txt](licenses/FiraCode-OFL.txt)
+- The bundled [JIZURA](https://github.com/852wa/JIZURA) lyric-video engine (`app/src/main/assets/lyric/jizura/`) is © 852wa, MIT — see [licenses/JIZURA-MIT.txt](licenses/JIZURA-MIT.txt). `assets/lyric/lrc.js` is taken from [jizura-sync](https://github.com/Saqoosha/jizura-sync) (MIT, Saqoosha)
 
 ## Structure
 
 ```
 app/src/main/java/com/kazuto/standby/
-├── MainActivity.kt                     # Setup screen (permissions / music app battery / preferences)
-├── Prefs.kt                            # User preferences (wired trigger, portrait)
-├── StandbyActivity.kt                  # The standby screen shown over the lock screen
+├── MainActivity.kt                     # Setup screen (permissions / music app battery / preferences / Spotify)
+├── Prefs.kt                            # User preferences (wired trigger, portrait, lyric video, Spotify tokens)
+├── StandbyActivity.kt                  # The standby screen shown over the lock screen; picks the playback source
 ├── service/ChargingWatchService.kt     # Persistent charging/screen watcher → launches StandbyActivity
 ├── service/BootReceiver.kt             # Restarts the service after reboot
+├── media/PlaybackSource.kt             # What the standby screen shows and controls (now-playing StateFlow + transport)
 ├── media/NowPlayingListenerService.kt  # Notification listener required for MediaSession access (empty)
-├── media/MediaSessionWatcher.kt        # Publishes now-playing info and position via StateFlow; stale-session watchdog
+├── media/MediaSessionWatcher.kt        # PlaybackSource from the phone's MediaSessions; stale-mirror watchdog
 ├── media/MusicAppKeepAlive.kt          # Keeps the music app process alive while standby is showing (bindService)
-└── ui/StandbyScreen.kt                 # Compose UI: slit-scan artwork (landscape/portrait) + clock overlay
+├── spotify/SpotifyAuth.kt              # Spotify sign-in (PKCE) and Web API calls
+├── spotify/SpotifyWebPlayer.kt         # PlaybackSource that polls GET /me/player once a second
+├── lyrics/LyricsRepository.kt          # Synced lyrics (LRC) from LRCLIB for the current track
+├── ui/StandbyScreen.kt                 # Compose UI: slit-scan artwork or lyric video + clock overlay
+└── ui/LyricVideo.kt                    # WebView hosting assets/lyric (JIZURA), fed the song and playback anchor
+app/src/main/assets/lyric/              # Lyric video page: index.html, lyric.js (driver), lrc.js (LRC→JIZURA), jizura/ (engine)
 ```

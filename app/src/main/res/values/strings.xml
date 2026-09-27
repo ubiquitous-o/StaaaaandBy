@@ -23,6 +23,21 @@
     <string name="pref_portrait_title">Also start in portrait</string>
     <string name="pref_portrait_desc">Off: only when the phone is lying sideways. On: any orientation — in portrait, the artwork slit-scans from top to bottom.</string>
 
+    <string name="pref_lyric_title">Lyric video when synced lyrics exist</string>
+    <string name="pref_lyric_desc">Looks up time-synced lyrics on LRCLIB and plays a JIZURA lyric video in place of the slit-scan artwork. Songs without synced lyrics show the artwork as before. Tap zones stay the same: left = previous, middle = play/pause, right = next.</string>
+
+    <string name="spotify_title">Spotify (optional)</string>
+    <string name="spotify_desc">Follow playback through the Spotify Web API instead of the phone\'s Spotify mirror, which silently desyncs. Create an app at developer.spotify.com (Web API, Premium account), add the Redirect URI below, and paste the app\'s Client ID. Development-mode apps work for up to 5 accounts listed under User Management.</string>
+    <string name="spotify_client_id">Client ID</string>
+    <string name="spotify_redirect_hint">Redirect URI to register on your Spotify app:</string>
+    <string name="spotify_connect">Save &amp; connect Spotify</string>
+    <string name="spotify_disconnect">Disconnect</string>
+    <string name="spotify_connected">✓ Connected</string>
+    <string name="spotify_not_connected">Not connected</string>
+    <string name="spotify_connected_msg">Connected to Spotify. StaaaaandBy now follows your account\'s playback.</string>
+    <string name="spotify_no_client">Enter the Client ID first (32 hex characters).</string>
+    <string name="spotify_open_failed">No browser could open the Spotify sign-in page.</string>
+
     <string name="status_done">✓ All set</string>
     <string name="status_todo">Not yet</string>
 

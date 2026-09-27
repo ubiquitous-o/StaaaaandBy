@@ -30,8 +30,15 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.kazuto.standby.lyrics.LyricsRepository
+import com.kazuto.standby.lyrics.SyncedLyrics
 import com.kazuto.standby.media.MediaSessionWatcher
+import com.kazuto.standby.media.PlaybackSource
+import com.kazuto.standby.spotify.SpotifyAuth
+import com.kazuto.standby.spotify.SpotifyWebPlayer
 import com.kazuto.standby.ui.StandbyScreen
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -53,7 +60,10 @@ class StandbyActivity : ComponentActivity() {
         private const val CLOCK_ONLY_BRIGHTNESS = 0.05f
     }
 
-    private lateinit var mediaWatcher: MediaSessionWatcher
+    /** 再生状態の供給元。Spotify に接続済みなら Web API、そうでなければ端末の MediaSession */
+    private lateinit var source: PlaybackSource
+    private var lyricsRepo: LyricsRepository? = null
+    private var lyrics: StateFlow<SyncedLyrics?> = MutableStateFlow(null)
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -108,16 +118,25 @@ class StandbyActivity : ComponentActivity() {
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
 
-        mediaWatcher = MediaSessionWatcher(applicationContext)
-        mediaWatcher.onResyncNeeded = ::resyncViaForeground
-        mediaWatcher.start()
+        source = if (SpotifyAuth.isConnected(this)) {
+            SpotifyWebPlayer(applicationContext)
+        } else {
+            MediaSessionWatcher(applicationContext).also { it.onResyncNeeded = ::resyncViaForeground }
+        }
+        source.start()
+        if (Prefs.lyricVideo(this)) {
+            lyricsRepo = LyricsRepository(lifecycleScope).also {
+                it.follow(source.nowPlaying)
+                lyrics = it.lyrics
+            }
+        }
 
         // 曲情報が無い(時計だけの黒画面)あいだは画面を暗くする。
         // Qi 充電の熱で 45°C 付近で充電が止まるので、見る必要の薄い画面の発熱を削る。
         // 曲情報が戻ったら端末の明るさ設定に戻す
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                mediaWatcher.nowPlaying.collect { np ->
+                source.nowPlaying.collect { np ->
                     setScreenBrightness(
                         if (np == null) CLOCK_ONLY_BRIGHTNESS
                         else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
@@ -147,7 +166,7 @@ class StandbyActivity : ComponentActivity() {
                     enter = fadeIn(animationSpec = tween(durationMillis = 700)),
                     exit = fadeOut(animationSpec = tween(durationMillis = 200))
                 ) {
-                    StandbyScreen(mediaWatcher = mediaWatcher, onDismiss = { finish() })
+                    StandbyScreen(source = source, lyrics = lyrics, onDismiss = { finish() })
                 }
             }
         }
@@ -220,7 +239,7 @@ class StandbyActivity : ComponentActivity() {
         handler.removeCallbacks(delayedFinish)
         handler.removeCallbacks(endResync)
         unregisterReceiver(powerReceiver)
-        mediaWatcher.stop()
+        source.stop()
         super.onDestroy()
     }
 }

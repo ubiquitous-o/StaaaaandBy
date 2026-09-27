@@ -1,0 +1,24 @@
+# Build check only. StaaaaandBy is distributed as source (no APK on Releases): the lyric video
+# and Spotify Web API features are for personal use under Spotify's developer policy, see README.
+name: Build
+
+on:
+  push:
+    branches: ['main']
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # gradle.properties の org.gradle.java.home はローカルMac用なのでCIでは上書きする
+      - name: Build debug APK
+        run: ./gradlew assembleDebug -Dorg.gradle.java.home="$JAVA_HOME" --no-daemon

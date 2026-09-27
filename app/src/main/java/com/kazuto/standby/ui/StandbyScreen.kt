@@ -14,7 +14,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -52,9 +59,11 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kazuto.standby.R
-import com.kazuto.standby.media.MediaSessionWatcher
+import com.kazuto.standby.lyrics.SyncedLyrics
+import com.kazuto.standby.media.PlaybackSource
 import com.kazuto.standby.media.NowPlaying
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -102,31 +111,62 @@ private class Layout(
     val timeSize: TextUnit,
     val dateSize: TextUnit,
     val dateSpacing: TextUnit,
+    val batterySize: TextUnit,
     val trackStart: Dp,
     val trackBottom: Dp,
     val trackWidthFraction: Float,
+    val trackTitleSize: TextUnit = 24.sp,
+    val trackArtistSize: TextUnit = 18.sp,
 )
 
 private val LandscapeLayout = Layout(
-    timeSize = 120.sp, dateSize = 24.sp, dateSpacing = 4.sp,
+    timeSize = 120.sp, dateSize = 24.sp, dateSpacing = 4.sp, batterySize = 18.sp,
     trackStart = 36.dp, trackBottom = 30.dp, trackWidthFraction = 0.62f,
 )
 private val PortraitLayout = Layout(
-    timeSize = 84.sp, dateSize = 20.sp, dateSpacing = 3.sp,
+    timeSize = 84.sp, dateSize = 20.sp, dateSpacing = 3.sp, batterySize = 18.sp,
     trackStart = 24.dp, trackBottom = 40.dp, trackWidthFraction = 0.88f,
 )
+// リリックビデオ中: 歌詞が画面全体に出るので、時計は小さく左上、曲名は右上に寄せる
+private val LandscapeLyricLayout = Layout(
+    timeSize = 44.sp, dateSize = 14.sp, dateSpacing = 2.sp, batterySize = 13.sp,
+    trackStart = 36.dp, trackBottom = 30.dp, trackWidthFraction = 0.5f,
+    trackTitleSize = 20.sp, trackArtistSize = 15.sp,
+)
+private val PortraitLyricLayout = Layout(
+    timeSize = 40.sp, dateSize = 13.sp, dateSpacing = 2.sp, batterySize = 12.sp,
+    trackStart = 24.dp, trackBottom = 40.dp, trackWidthFraction = 0.5f,
+    trackTitleSize = 17.sp, trackArtistSize = 13.sp,
+)
 
+/**
+ * @param source 再生状態と操作の供給元
+ * @param lyrics 再生中の曲の同期歌詞。null なら(または鍵が合わなければ)スリットスキャンを出す
+ */
 @Composable
-fun StandbyScreen(mediaWatcher: MediaSessionWatcher, onDismiss: () -> Unit) {
+fun StandbyScreen(
+    source: PlaybackSource,
+    lyrics: StateFlow<SyncedLyrics?>,
+    onDismiss: () -> Unit,
+) {
     val now by rememberCurrentTime()
     val battery by rememberBatteryStatus()
-    val nowPlaying by mediaWatcher.nowPlaying.collectAsState()
+    val nowPlaying by source.nowPlaying.collectAsState()
+    val syncedLyrics by lyrics.collectAsState()
     // タップ処理の中から最新の値を読むため(pointerInput は再起動しない)
     val hasMusic by rememberUpdatedState(nowPlaying != null)
     val dismiss by rememberUpdatedState(onDismiss)
     val isPortrait =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
-    val layout = if (isPortrait) PortraitLayout else LandscapeLayout
+    val playing = nowPlaying
+    // 同期歌詞がいまの曲のものならリリックビデオ、そうでなければスリットスキャン
+    val lyricVideo = syncedLyrics?.takeIf { playing != null && it.key == playing.trackKey }
+    val layout = when {
+        lyricVideo != null && isPortrait -> PortraitLyricLayout
+        lyricVideo != null -> LandscapeLyricLayout
+        isPortrait -> PortraitLayout
+        else -> LandscapeLayout
+    }
 
     Box(
         modifier = Modifier
@@ -135,7 +175,7 @@ fun StandbyScreen(mediaWatcher: MediaSessionWatcher, onDismiss: () -> Unit) {
             // 曲情報あり: 画面3分割タップ: 左=前の曲 / 中央=再生停止 / 右=次の曲
             // 曲情報なし(時計だけの黒画面): どこをタップしてもスタンバイを閉じて
             // 普通のロック画面に戻す。鏡切れ等で操作できない状態からの脱出口
-            .pointerInput(mediaWatcher) {
+            .pointerInput(source) {
                 detectTapGestures { offset ->
                     if (!hasMusic) {
                         dismiss()
@@ -143,16 +183,21 @@ fun StandbyScreen(mediaWatcher: MediaSessionWatcher, onDismiss: () -> Unit) {
                     }
                     val third = size.width / 3f
                     when {
-                        offset.x < third -> mediaWatcher.skipToPrevious()
-                        offset.x > third * 2 -> mediaWatcher.skipToNext()
-                        else -> mediaWatcher.playPause()
+                        offset.x < third -> source.skipToPrevious()
+                        offset.x > third * 2 -> source.skipToNext()
+                        else -> source.playPause()
                     }
                 }
             }
     ) {
-        val playing = nowPlaying
         val art = playing?.albumArt
-        if (art != null) {
+        if (lyricVideo != null && playing != null) {
+            LyricVideo(
+                lyrics = lyricVideo,
+                playing = playing,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (art != null) {
             // 毎フレーム再生位置を計算してスリットを滑らかに動かす。
             // 一時停止中は値が変わらないので再描画も起きない。
             val progress by produceState(initialValue = 0f, playing) {
@@ -168,35 +213,73 @@ fun StandbyScreen(mediaWatcher: MediaSessionWatcher, onDismiss: () -> Unit) {
                 modifier = Modifier.fillMaxSize()
             )
         }
-        ClockOverlay(
-            now = now,
-            battery = battery,
-            layout = layout,
-            modifier = Modifier.align(Alignment.Center)
-        )
-        playing?.let { p ->
-            TrackInfo(
-                playing = p,
-                layout = layout,
+        if (lyricVideo != null && playing != null) {
+            // リリックビデオ中: 上端の帯に時計(左)と曲名(右)。パンチホールは上端中央なので
+            // 左右に分ければ隠れない。横向きではカットアウトが左右に来るのでその分だけ避ける
+            Row(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = layout.trackStart, bottom = layout.trackBottom)
+                    .align(Alignment.TopStart)
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                    .padding(top = 20.dp, start = layout.trackStart, end = layout.trackStart),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                ClockOverlay(
+                    now = now,
+                    battery = battery,
+                    layout = layout,
+                    horizontalAlignment = Alignment.Start,
+                )
+                TrackInfo(
+                    playing = playing,
+                    layout = layout,
+                    alignEnd = true,
+                    modifier = Modifier.padding(start = 16.dp, top = 6.dp)
+                )
+            }
+        } else {
+            ClockOverlay(
+                now = now,
+                battery = battery,
+                layout = layout,
+                modifier = Modifier.align(Alignment.Center)
             )
+            playing?.let { p ->
+                TrackInfo(
+                    playing = p,
+                    layout = layout,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = layout.trackStart, bottom = layout.trackBottom)
+                )
+            }
         }
     }
 }
 
-/** 左下のターミナル風「再生中」表示。長い文字列は領域内でマーキースクロールする。 */
+/**
+ * ターミナル風「再生中」表示。長い文字列は領域内でマーキースクロールする。
+ * 通常は左下、リリックビデオ中は右上(alignEnd)に置く。
+ */
 @Composable
-private fun TrackInfo(playing: NowPlaying, layout: Layout, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxWidth(layout.trackWidthFraction)) {
+private fun TrackInfo(
+    playing: NowPlaying,
+    layout: Layout,
+    modifier: Modifier = Modifier,
+    alignEnd: Boolean = false,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(layout.trackWidthFraction),
+        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start,
+    ) {
         MarqueeText(
             text = playing.title.uppercase(Locale.ENGLISH),
             style = TextStyle(
                 color = TextPrimary,
                 fontFamily = LabelFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = 24.sp,
+                fontSize = layout.trackTitleSize,
                 letterSpacing = 1.sp,
                 shadow = TrackShadow
             )
@@ -207,7 +290,7 @@ private fun TrackInfo(playing: NowPlaying, layout: Layout, modifier: Modifier = 
                 color = TextPrimary,
                 fontFamily = LabelFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = 18.sp,
+                fontSize = layout.trackArtistSize,
                 letterSpacing = 1.sp,
                 shadow = TrackShadow
             )
@@ -343,12 +426,13 @@ private fun ClockOverlay(
     now: LocalDateTime,
     battery: BatteryStatus,
     layout: Layout,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    horizontalAlignment: Alignment.Horizontal = Alignment.CenterHorizontally,
 ) {
     val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
     val dateFormatter = remember { DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH) }
 
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier = modifier, horizontalAlignment = horizontalAlignment) {
         Text(
             text = now.format(timeFormatter),
             style = TextStyle(
@@ -378,7 +462,7 @@ private fun ClockOverlay(
                 color = if (battery.isCharging) AccentGreen else TextPrimary.copy(alpha = 0.7f),
                 fontFamily = LabelFontFamily,
                 fontWeight = FontWeight.Medium,
-                fontSize = 18.sp,
+                fontSize = layout.batterySize,
                 shadow = OverlayShadow
             ),
             modifier = Modifier.padding(top = 8.dp)

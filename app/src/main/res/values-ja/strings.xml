@@ -21,6 +21,21 @@
     <string name="pref_portrait_title">縦向きでも表示する</string>
     <string name="pref_portrait_desc">オフ: 横向きに置いたときだけ表示します。オン: どの向きでも表示し、縦向きではジャケットを上から下へスリットスキャンします。</string>
 
+    <string name="pref_lyric_title">同期歌詞があればリリックビデオを表示</string>
+    <string name="pref_lyric_desc">LRCLIBで時刻つきの歌詞を探し、見つかった曲はスリットスキャンの代わりにJIZURAのリリックビデオを流します。歌詞がない曲はこれまで通りジャケットを表示します。タップ操作は同じ: 左=前の曲 / 中央=再生停止 / 右=次の曲。</string>
+
+    <string name="spotify_title">Spotify連携（任意）</string>
+    <string name="spotify_desc">スマホのSpotifyの「鏡」（静かに同期が切れる）の代わりに、Spotify Web APIから直接再生状態を追います。developer.spotify.com でアプリを作り（Web API、Premiumアカウント）、下のRedirect URIを登録して、Client IDを貼ってください。開発モードのアプリはUser Managementに登録した最大5アカウントで使えます。</string>
+    <string name="spotify_client_id">Client ID</string>
+    <string name="spotify_redirect_hint">Spotifyアプリに登録するRedirect URI:</string>
+    <string name="spotify_connect">保存してSpotifyに接続</string>
+    <string name="spotify_disconnect">接続を解除</string>
+    <string name="spotify_connected">✓ 接続済み</string>
+    <string name="spotify_not_connected">未接続</string>
+    <string name="spotify_connected_msg">Spotifyに接続しました。これからはアカウントの再生状態を直接追います。</string>
+    <string name="spotify_no_client">先にClient ID（16進32文字）を入力してください。</string>
+    <string name="spotify_open_failed">Spotifyのサインイン画面を開けるブラウザがありません。</string>
+
     <string name="status_done">✓ 設定できました</string>
     <string name="status_todo">これから</string>
 

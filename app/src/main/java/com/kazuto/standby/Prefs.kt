@@ -14,6 +14,13 @@ object Prefs {
     private const val KEY_LAST_MUSIC_APP = "last_music_app"
     private const val KEY_LAST_MUSIC_REMOTE = "last_music_remote"
     private const val KEY_LAST_REMOTE_TITLE = "last_remote_title"
+    private const val KEY_LYRIC_VIDEO = "lyric_video"
+    private const val KEY_SPOTIFY_CLIENT_ID = "spotify_client_id"
+    private const val KEY_SPOTIFY_ACCESS = "spotify_access_token"
+    private const val KEY_SPOTIFY_REFRESH = "spotify_refresh_token"
+    private const val KEY_SPOTIFY_EXPIRES = "spotify_expires_at"
+    private const val KEY_SPOTIFY_PKCE_VERIFIER = "spotify_pkce_verifier"
+    private const val KEY_SPOTIFY_PKCE_STATE = "spotify_pkce_state"
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -59,4 +66,63 @@ object Prefs {
 
     fun setLastRemoteTitle(context: Context, value: String) =
         prefs(context).edit().putString(KEY_LAST_REMOTE_TITLE, value).apply()
+
+    /** true: 同期歌詞が見つかった曲はスリットスキャンの代わりにリリックビデオを出す。 */
+    fun lyricVideo(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_LYRIC_VIDEO, false)
+
+    fun setLyricVideo(context: Context, value: Boolean) =
+        prefs(context).edit().putBoolean(KEY_LYRIC_VIDEO, value).apply()
+
+    /** ユーザーが自分で作った Spotify アプリの Client ID(公開識別子、秘密ではない)。 */
+    fun spotifyClientId(context: Context): String? =
+        prefs(context).getString(KEY_SPOTIFY_CLIENT_ID, null)
+
+    /** Client ID を変えたら古いトークンは無効なので捨てる。 */
+    fun setSpotifyClientId(context: Context, value: String) {
+        val trimmed = value.trim()
+        if (trimmed == spotifyClientId(context)) return
+        prefs(context).edit()
+            .putString(KEY_SPOTIFY_CLIENT_ID, trimmed)
+            .remove(KEY_SPOTIFY_ACCESS).remove(KEY_SPOTIFY_REFRESH).remove(KEY_SPOTIFY_EXPIRES)
+            .apply()
+    }
+
+    class SpotifyTokens(val accessToken: String?, val refreshToken: String, val expiresAt: Long)
+
+    /** 保存済みの Spotify トークン。リフレッシュトークンが無ければ未接続として null。 */
+    fun spotifyTokens(context: Context): SpotifyTokens? {
+        val p = prefs(context)
+        val refresh = p.getString(KEY_SPOTIFY_REFRESH, null)?.takeIf { it.isNotEmpty() } ?: return null
+        return SpotifyTokens(p.getString(KEY_SPOTIFY_ACCESS, null), refresh, p.getLong(KEY_SPOTIFY_EXPIRES, 0L))
+    }
+
+    fun setSpotifyTokens(context: Context, accessToken: String, refreshToken: String, expiresAt: Long) =
+        prefs(context).edit()
+            .putString(KEY_SPOTIFY_ACCESS, accessToken)
+            .putString(KEY_SPOTIFY_REFRESH, refreshToken)
+            .putLong(KEY_SPOTIFY_EXPIRES, expiresAt)
+            .apply()
+
+    fun clearSpotifyTokens(context: Context) =
+        prefs(context).edit()
+            .remove(KEY_SPOTIFY_ACCESS).remove(KEY_SPOTIFY_REFRESH).remove(KEY_SPOTIFY_EXPIRES)
+            .apply()
+
+    /** サインインの途中だけ持つ PKCE の verifier と state。(verifier, state) */
+    fun spotifyPkce(context: Context): Pair<String, String>? {
+        val p = prefs(context)
+        val v = p.getString(KEY_SPOTIFY_PKCE_VERIFIER, null) ?: return null
+        val st = p.getString(KEY_SPOTIFY_PKCE_STATE, null) ?: return null
+        return v to st
+    }
+
+    fun setSpotifyPkce(context: Context, verifier: String, state: String) =
+        prefs(context).edit()
+            .putString(KEY_SPOTIFY_PKCE_VERIFIER, verifier)
+            .putString(KEY_SPOTIFY_PKCE_STATE, state)
+            .apply()
+
+    fun clearSpotifyPkce(context: Context) =
+        prefs(context).edit().remove(KEY_SPOTIFY_PKCE_VERIFIER).remove(KEY_SPOTIFY_PKCE_STATE).apply()
 }
