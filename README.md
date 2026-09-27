@@ -2,16 +2,17 @@
 
 [日本語](README.ja.md)
 
-An Android app inspired by the iPhone's StandBy mode. While charging on a Qi pad, it shows a clock and the artwork of the currently playing track on top of the lock screen.
+An Android app inspired by the iPhone's StandBy mode. While charging on a Qi pad, it shows a clock and the artwork of the currently playing track on top of the lock screen — or, when time-synced lyrics exist for the song, a lyric video.
 
 ![Demo](docs/demo.gif)
 
-## How it works
+## Lyric video (v1.1.0)
 
-- **ChargingWatchService** (a persistent foreground service) watches for "power connected" and "screen off" events. When the phone is wirelessly (Qi) charging and the screen is off, it launches **StandbyActivity** on top of the lock screen (`showWhenLocked` + `turnScreenOn`). The "Display over other apps" permission (SYSTEM_ALERT_WINDOW) grants the background activity launch
-- By default, wired (AC/USB) charging does not trigger it, and it only launches when the phone is physically lying sideways (an accelerometer watch keeps checking while charging, so rotating it to landscape later also works). Both can be changed in the app's Preferences: **Also start on wired charging** and **Also start in portrait**. The screen closes automatically when charging stops
-- Now-playing info comes from **MediaSessionManager** + a notification listener. Works with any music app that uses MediaSession, not just Spotify
-- UI is built with Jetpack Compose. Landscape by default (sensor auto-detects which way is up), full screen with all system bars hidden. With portrait enabled, the activity follows the full sensor and switches to a portrait layout
+Turn on **Lyric video when synced lyrics exist** in the setup screen. For every song StaaaaandBy asks [LRCLIB](https://lrclib.net) (a public, key-less community database) for time-synced lyrics by title, artist and duration. When it finds them, the slit-scan artwork is replaced by a lyric video rendered by [JIZURA](https://github.com/852wa/JIZURA), 852wa's browser engine for 文字PV, running in a WebView from the bundled `assets/lyric/`. The look is seeded by the track, so a song always opens the same way. Songs without synced lyrics show the artwork exactly as before. The tap zones do not change (left = previous, middle = play/pause, right = next); while lyrics are showing, the clock moves to the top-left corner and the track title and artist to the top-right, small enough to stay out of the way. Both orientations are handled: the page teaches JIZURA the screen's exact aspect (3:7 portrait, 7:3 landscape on the Flip), so the video fills the screen with no letterbox. JIZURA's own HUD (title bar, timecode, lyric counter) is turned off, and so are its blur filters and glow — on a Galaxy Z Flip7's WebView those cost 60-140 ms per frame; without them the page runs at 110+ fps.
+
+![Lyric video demo](docs/lyric-demo.gif)
+
+This follows [jizura-sync](https://github.com/Saqoosha/jizura-sync) by Saqoosha, whose LRC-to-JIZURA conversion is used as is. Fonts load from Google Fonts on demand, so the first song after install needs a network connection for the full look.
 
 ## UI
 
@@ -61,17 +62,18 @@ The mirror can also die without being torn down: the session keeps the same trac
 
 **If the display does get stuck anyway, open Spotify on the phone once and go back home** — Spotify only refreshes its Connect state when its own UI comes to the foreground. StaaaaandBy deliberately does not automate this: launching Spotify's UI while the phone is locked leaves it in a half-started state, after which Spotify opens a local audio stream every time playback resumes on the other device, and multipoint Bluetooth earbuds jump to the phone. The code for that automatic resync is still in the repo (`AUTO_RESYNC_ENABLED`), disabled for that reason.
 
-## Lyric video (v1.1.0)
-
-Turn on **Lyric video when synced lyrics exist** in the setup screen. For every song StaaaaandBy asks [LRCLIB](https://lrclib.net) (a public, key-less community database) for time-synced lyrics by title, artist and duration. When it finds them, the slit-scan artwork is replaced by a lyric video rendered by [JIZURA](https://github.com/852wa/JIZURA), 852wa's browser engine for 文字PV, running in a WebView from the bundled `assets/lyric/`. The look is seeded by the track, so a song always opens the same way. Songs without synced lyrics show the artwork exactly as before. The tap zones do not change (left = previous, middle = play/pause, right = next); while lyrics are showing, the clock moves to the top-left corner and the track title and artist to the top-right, small enough to stay out of the way. Both orientations are handled: the page teaches JIZURA the screen's exact aspect (3:7 portrait, 7:3 landscape on the Flip), so the video fills the screen with no letterbox. JIZURA's own HUD (title bar, timecode, lyric counter) is turned off, and so are its blur filters and glow — on a Galaxy Z Flip7's WebView those cost 60-140 ms per frame; without them the page runs at 110+ fps.
-
-This follows [jizura-sync](https://github.com/Saqoosha/jizura-sync) by Saqoosha, whose LRC-to-JIZURA conversion is used as is. Fonts load from Google Fonts on demand, so the first song after install needs a network connection for the full look.
-
 ## Spotify Web API (optional)
 
 The phone-side Spotify Connect mirror described above is the weak link: it silently desyncs minutes into a session and there is nothing an app can do about it. As an alternative, StaaaaandBy can follow your account's playback through the **Spotify Web API**, which reports what is playing on any device straight from Spotify's servers. Create your own Spotify app at [developer.spotify.com](https://developer.spotify.com/dashboard) (Web API; the owner needs Premium), register the Redirect URI `staaaaandby://spotify-callback`, paste the Client ID into the Spotify card in the setup screen and connect. Sign-in is Authorization Code with PKCE, so there is no client secret; tokens stay on the phone and go only to Spotify. Development-mode apps allow up to 5 accounts listed under the app's User Management. While connected, the standby screen polls `GET /me/player` once a second and extrapolates in between; the tap controls call the Web API, so they act on whichever device is playing and can never hijack playback onto the phone.
 
 Please read Spotify's [Developer Policy](https://developer.spotify.com/policy) before enabling both features together: it forbids synchronizing Spotify's recordings with visual media, which a lyric video timed to the track is. This is a personal experiment — use your own Spotify app, keep it to your own accounts, and do not offer it as a service. Lyrics come from LRCLIB's community data at runtime and are not licensed or redistributed by this project.
+
+## How it works
+
+- **ChargingWatchService** (a persistent foreground service) watches for "power connected" and "screen off" events. When the phone is wirelessly (Qi) charging and the screen is off, it launches **StandbyActivity** on top of the lock screen (`showWhenLocked` + `turnScreenOn`). The "Display over other apps" permission (SYSTEM_ALERT_WINDOW) grants the background activity launch
+- By default, wired (AC/USB) charging does not trigger it, and it only launches when the phone is physically lying sideways (an accelerometer watch keeps checking while charging, so rotating it to landscape later also works). Both can be changed in the app's Preferences: **Also start on wired charging** and **Also start in portrait**. The screen closes automatically when charging stops
+- Now-playing info comes from **MediaSessionManager** + a notification listener. Works with any music app that uses MediaSession, not just Spotify
+- UI is built with Jetpack Compose. Landscape by default (sensor auto-detects which way is up), full screen with all system bars hidden. With portrait enabled, the activity follows the full sensor and switches to a portrait layout
 
 ## Privacy
 

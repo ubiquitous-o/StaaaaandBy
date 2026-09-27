@@ -11,3 +11,4 @@ keystore.properties
 *.jks
 *.keystore
 .claude/launch.json
+docs/raw/
