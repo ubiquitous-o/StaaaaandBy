@@ -12,6 +12,28 @@
     const ctx = canvas.getContext('2d');
     const renderer = new J.Renderer();
 
+    // Styles the random look must never pick (user's taste): paper, the horror letter, candy.
+    const EXCLUDED_STYLES = new Set(['paper', 'hrCurse', 'candy']);
+    const baseRandomOk = J.randomOk;
+    J.randomOk = (project, g, k) => !(g === 'style' && EXCLUDED_STYLES.has(k)) && baseRandomOk(project, g, k);
+    // The moods list a few hand-picked styles that bypass randomOk; strip the excluded ones there too.
+    for (const m of Object.values(J.MOODS)) if (Array.isArray(m.styles)) m.styles = m.styles.filter(k => !EXCLUDED_STYLES.has(k));
+
+    // Fonts the user does not want, whatever the style. Every lookup goes through J.FONTS[key]
+    // (styles, hard-coded picks in the packs, faceOf), so re-pointing the entry at an allowed
+    // face covers all of them: the key stays, the drawn face changes.
+    const FONT_SUBSTITUTES = {
+        potta: 'gothic_black',     // Potta One
+        reggae: 'gothic_black',    // Reggae One
+        brush: 'mincho_black',     // Yuji Syuku
+        pop: 'gothic_black',       // Mochiy Pop One
+        round: 'gothic_black',     // M PLUS Rounded 1c
+        tokumin: 'mincho_black',   // Kaisei Tokumin
+    };
+    for (const [key, sub] of Object.entries(FONT_SUBSTITUTES)) {
+        if (J.FONTS[key] && J.FONTS[sub]) J.FONTS[key] = Object.assign({}, J.FONTS[sub], { label: J.FONTS[sub].label + ' (for ' + J.FONTS[key].label + ')' });
+    }
+
     // Characters JIZURA's HUD / title cards draw besides the lyrics (same set as its editor UI).
     const HUD_CHARS = '0123456789:./-_()【】・No.LYRICRECUNTITLEDXYlinebpminterlude—─／ ';
 
@@ -41,6 +63,7 @@
     const minFrameMs = () => 1000 / MAX_FPS - 1;
 
     let song = null;             // { key, title, artist, durationMs, lyrics }
+    let schemes = null;          // colour schemes derived from the album art (from Android), or null
     let look = null;             // JIZURA random look (omakase) on top of the default project
     let plan = null;
     let planAspect = null;       // JIZURA aspect key the plan was built for
@@ -67,14 +90,29 @@
     /** A random look seeded by the track, so a song always opens the same way. */
     function rollLook(seed) {
         const rnd = seed == null ? Math.random : J.rng(seed);
-        const base = Object.assign(J.defaultProject(), { extra: true, typo: true, kinetic: true });
-        return J.omakase(base, rnd);
+        // wa: false = no 和風 motifs (提灯・障子・家紋…); horror stays off
+        const base = Object.assign(J.defaultProject(), { extra: true, typo: true, kinetic: true, wa: false, horror: false });
+        let look = J.omakase(base, rnd);
+        // belt and braces: the look must not land on an excluded style
+        for (let i = 0; i < 8 && EXCLUDED_STYLES.has(look.style); i++) look = J.omakase(base, rnd);
+        return look;
     }
+
+    /**
+     * JIZURA resolves the style once per plan (a deep copy), and the renderer reads colours from
+     * that copy. Wrap resolveStyle so the album-art schemes replace the style's own.
+     */
+    const baseResolveStyle = J.resolveStyle;
+    J.resolveStyle = (project) => {
+        const st = baseResolveStyle(project);
+        if (schemes && schemes.length) st.schemes = schemes.map(sc => Object.assign({}, sc));
+        return st;
+    };
 
     function buildPlan() {
         if (!song) { plan = null; return; }
         const project = Object.assign(J.defaultProject(), {
-            extra: true, typo: true, kinetic: true, horror: false,
+            extra: true, typo: true, kinetic: true, horror: false, wa: false,
             title: song.title, artist: song.artist, lyrics: song.lyrics,
             aspect: (planAspect = windowAspect()), fps: 60,
         }, look);
@@ -87,6 +125,8 @@
         project.timing = Object.assign({}, project.timing, { bpm: 0, snap: false });
         project.enabled = Object.assign({}, J.defaultProject().enabled, look.enabled);
         plan = J.plan(project, song.durationMs ? { duration: song.durationMs / 1000 } : null);
+        console.log(`look: style=${project.style} (${(J.STYLES[project.style] || {}).name || '?'}) mood=${project.mood} ` +
+            `colours=${schemes ? 'album art' : 'style'} cuts=${plan.cuts.length}`);
         lastT = -1;
         sizeCanvas();
         J.ensureFonts(song.lyrics + song.title + song.artist + HUD_CHARS, J.fontsOfPlan(plan))
@@ -171,13 +211,29 @@
     });
 
     window.lyric = {
-        /** @param {{key: string, title: string, artist: string, durationMs: number, lrc: string}} s */
+        /** @param {{key: string, title: string, artist: string, durationMs: number, lrc: string, schemes?: object[]}} s */
         setSong(s) {
             if (song && song.key === s.key) return;
             const { lyrics } = window.lrcToJizura(s.lrc);
             song = { key: s.key, title: s.title, artist: s.artist, durationMs: s.durationMs, lyrics };
+            schemes = Array.isArray(s.schemes) && s.schemes.length ? s.schemes : null;
             look = rollLook(hashString(s.key));
             buildPlan();
+        },
+        /**
+         * Colour schemes from the album art, which may arrive after the song (the art loads
+         * asynchronously). The plan holds its own resolved style, so swap its schemes in place:
+         * the renderer picks them up on the next frame, no rebuild.
+         * @param {{key: string, schemes: object[]|null}} c
+         */
+        setColors(c) {
+            if (!song || song.key !== c.key) return;
+            schemes = Array.isArray(c.schemes) && c.schemes.length ? c.schemes : null;
+            if (plan && plan.style) {
+                if (schemes) plan.style.schemes = schemes.map(sc => Object.assign({}, sc));
+                else plan.style.schemes = baseResolveStyle({ style: look.style }).schemes;
+                lastT = -1;
+            }
         },
         clear() {
             song = null; plan = null; lastT = -1;

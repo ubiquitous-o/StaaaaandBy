@@ -17,14 +17,19 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
+import com.kazuto.standby.lyrics.ArtColors
 import com.kazuto.standby.lyrics.SyncedLyrics
 import com.kazuto.standby.media.NowPlaying
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -71,8 +76,16 @@ fun LyricVideo(holder: LyricPageHolder, lyrics: SyncedLyrics, playing: NowPlayin
     DisposableEffect(page) { onDispose { page.clear() } }
 
     val ready by page.ready.collectAsState()
+    // ジャケットの配色。アートは後から届くこともあるので、曲とは別に追いかける
+    val art = playing.albumArt
+    val schemes by produceState<JSONArray?>(initialValue = null, art) {
+        value = art?.let { bmp -> withContext(Dispatchers.Default) { runCatching { ArtColors.schemesFor(bmp) }.getOrNull() } }
+    }
     LaunchedEffect(ready, lyrics.key) {
-        if (ready) page.setSong(lyrics)
+        if (ready) page.setSong(lyrics, schemes)
+    }
+    LaunchedEffect(ready, lyrics.key, schemes) {
+        if (ready) page.setColors(lyrics.key, schemes)
     }
     LaunchedEffect(
         ready, lyrics.key,
@@ -126,11 +139,18 @@ class LyricPage(context: Context) {
         view.loadUrl(URL)
     }
 
-    fun setSong(l: SyncedLyrics) {
+    fun setSong(l: SyncedLyrics, schemes: JSONArray?) {
         val json = JSONObject()
             .put("key", l.key).put("title", l.title).put("artist", l.artist)
             .put("durationMs", l.durationMs).put("lrc", l.lrc)
+            .put("schemes", schemes ?: JSONObject.NULL)
         view.evaluateJavascript("window.lyric && window.lyric.setSong($json)", null)
+    }
+
+    /** ジャケットの配色が(後から)決まったとき。null なら JIZURA のスタイル既定の配色に戻す */
+    fun setColors(key: String, schemes: JSONArray?) {
+        val json = JSONObject().put("key", key).put("schemes", schemes ?: JSONObject.NULL)
+        view.evaluateJavascript("window.lyric && window.lyric.setColors($json)", null)
     }
 
     /** 再生位置の基準点。JS 側は受け取った瞬間からの経過で外挿する */

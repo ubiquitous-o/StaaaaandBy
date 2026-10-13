@@ -23,8 +23,8 @@ android {
         applicationId = "com.kazuto.standby"
         minSdk = 27
         targetSdk = 35
-        versionCode = 16
-        versionName = "1.1.2"
+        versionCode = 17
+        versionName = "1.1.3"
     }
 
     signingConfigs {
@@ -74,5 +74,6 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.webkit)
+    implementation(libs.androidx.palette)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

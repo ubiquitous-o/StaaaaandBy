@@ -9,6 +9,14 @@ import android.graphics.Bitmap
 import android.os.BatteryManager
 import android.os.SystemClock
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -117,6 +125,8 @@ private class Layout(
     val trackWidthFraction: Float,
     val trackTitleSize: TextUnit = 24.sp,
     val trackArtistSize: TextUnit = 18.sp,
+    /** リリックビデオ中、左下に出すジャケットのサムネイルの一辺 */
+    val thumbSize: Dp = 56.dp,
 )
 
 private val LandscapeLayout = Layout(
@@ -130,13 +140,13 @@ private val PortraitLayout = Layout(
 // リリックビデオ中: 歌詞が画面全体に出るので、時計は小さく左上、曲名は右上に寄せる
 private val LandscapeLyricLayout = Layout(
     timeSize = 44.sp, dateSize = 14.sp, dateSpacing = 2.sp, batterySize = 13.sp,
-    trackStart = 36.dp, trackBottom = 30.dp, trackWidthFraction = 0.5f,
-    trackTitleSize = 20.sp, trackArtistSize = 15.sp,
+    trackStart = 36.dp, trackBottom = 18.dp, trackWidthFraction = 0.55f,
+    trackTitleSize = 20.sp, trackArtistSize = 15.sp, thumbSize = 64.dp,
 )
 private val PortraitLyricLayout = Layout(
     timeSize = 40.sp, dateSize = 13.sp, dateSpacing = 2.sp, batterySize = 12.sp,
-    trackStart = 24.dp, trackBottom = 40.dp, trackWidthFraction = 0.5f,
-    trackTitleSize = 17.sp, trackArtistSize = 13.sp,
+    trackStart = 24.dp, trackBottom = 22.dp, trackWidthFraction = 0.75f,
+    trackTitleSize = 17.sp, trackArtistSize = 13.sp, thumbSize = 56.dp,
 )
 
 /**
@@ -222,29 +232,42 @@ fun StandbyScreen(
             )
         }
         if (lyricVideo != null && playing != null) {
-            // リリックビデオ中: 上端の帯に時計(左)と曲名(右)。パンチホールは上端中央なので
-            // 左右に分ければ隠れない。横向きではカットアウトが左右に来るのでその分だけ避ける
-            Row(
+            // リリックビデオ中: 時計は左上(パンチホールは上端中央なので左に寄せれば隠れない)、
+            // 左下にジャケットのサムネイルとその横に曲名・アーティスト。
+            // 横向きではカットアウトが左右に来るのでその分だけ避ける
+            ClockOverlay(
+                now = now,
+                battery = battery,
+                layout = layout,
+                horizontalAlignment = Alignment.Start,
                 modifier = Modifier
                     .align(Alignment.TopStart)
+                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                    .padding(top = 20.dp, start = layout.trackStart)
+            )
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                    .padding(top = 20.dp, start = layout.trackStart, end = layout.trackStart),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(start = layout.trackStart, end = layout.trackStart, bottom = layout.trackBottom),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                ClockOverlay(
-                    now = now,
-                    battery = battery,
-                    layout = layout,
-                    horizontalAlignment = Alignment.Start,
-                )
-                TrackInfo(
-                    playing = playing,
-                    layout = layout,
-                    alignEnd = true,
-                    modifier = Modifier.padding(start = 16.dp, top = 6.dp)
-                )
+                art?.let { bmp ->
+                    val thumb = remember(bmp) { bmp.asImageBitmap() }
+                    Image(
+                        bitmap = thumb,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(layout.thumbSize)
+                            .shadow(8.dp, RoundedCornerShape(6.dp))
+                            .clip(RoundedCornerShape(6.dp))
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
+                }
+                // 曲名の枠はジャケットの右から画面右端まで。長い曲名はその幅でスクロールする
+                TrackInfo(playing = playing, layout = layout, fillRow = true, modifier = Modifier.weight(1f))
             }
         } else {
             ClockOverlay(
@@ -276,9 +299,11 @@ private fun TrackInfo(
     layout: Layout,
     modifier: Modifier = Modifier,
     alignEnd: Boolean = false,
+    /** true: 親(Row)が決めた幅をそのまま使う。false: 画面幅の trackWidthFraction */
+    fillRow: Boolean = false,
 ) {
     Column(
-        modifier = modifier.fillMaxWidth(layout.trackWidthFraction),
+        modifier = if (fillRow) modifier else modifier.fillMaxWidth(layout.trackWidthFraction),
         horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start,
     ) {
         MarqueeText(
