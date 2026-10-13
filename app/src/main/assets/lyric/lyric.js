@@ -44,6 +44,11 @@
         if (J.FONTS[key] && J.FONTS[sub]) J.FONTS[key] = Object.assign({}, J.FONTS[sub], { label: J.FONTS[sub].label + ' (for ' + J.FONTS[key].label + ')' });
     }
 
+    // Line breaking: word boundaries, particles, balanced width (see linebreak.js)
+    const baseSplitLines = J.splitLines;
+    J.splitLines = (text, maxPer) =>
+        window.standbyBreakLines(text, maxPer, J.segLocale ? J.segLocale() : 'ja', baseSplitLines);
+
     // Characters JIZURA's HUD / title cards draw besides the lyrics (same set as its editor UI).
     const HUD_CHARS = '0123456789:./-_()【】・No.LYRICRECUNTITLEDXYlinebpminterlude—─／ ';
 
