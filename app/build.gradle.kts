@@ -23,8 +23,8 @@ android {
         applicationId = "com.kazuto.standby"
         minSdk = 27
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.1.3"
+        versionCode = 18
+        versionName = "1.1.4"
     }
 
     signingConfigs {

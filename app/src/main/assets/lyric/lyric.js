@@ -14,8 +14,17 @@
 
     // Styles the random look must never pick (user's taste): paper, the horror letter, candy.
     const EXCLUDED_STYLES = new Set(['paper', 'hrCurse', 'candy']);
+    // Parts (by group) that must never be used: the planner and the random look both ask
+    // J.randomOk before enabling a part, so refusing here removes them everywhere.
+    const EXCLUDED_PARTS = {
+        layout: new Set(['clapper', 'cassette']),   // カチンコ, カセット
+    };
     const baseRandomOk = J.randomOk;
-    J.randomOk = (project, g, k) => !(g === 'style' && EXCLUDED_STYLES.has(k)) && baseRandomOk(project, g, k);
+    J.randomOk = (project, g, k) => {
+        if (g === 'style' && EXCLUDED_STYLES.has(k)) return false;
+        if (EXCLUDED_PARTS[g] && EXCLUDED_PARTS[g].has(k)) return false;
+        return baseRandomOk(project, g, k);
+    };
     // The moods list a few hand-picked styles that bypass randomOk; strip the excluded ones there too.
     for (const m of Object.values(J.MOODS)) if (Array.isArray(m.styles)) m.styles = m.styles.filter(k => !EXCLUDED_STYLES.has(k));
 

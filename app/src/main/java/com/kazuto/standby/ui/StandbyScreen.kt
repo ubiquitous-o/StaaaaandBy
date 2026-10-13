@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.ColorUtils
 import com.kazuto.standby.R
 import com.kazuto.standby.lyrics.LyricsState
 import com.kazuto.standby.media.PlaybackSource
@@ -78,18 +79,32 @@ import java.util.Locale
 
 private val ScreenBg = Color.Black
 private val TextPrimary = Color(0xFFF2F3F5)
+/** 明るいジャケットの上に置く文字色 */
+private val TextOnLight = Color(0xFF131316)
+
+/**
+ * ジャケットが明るいか(平均輝度 > 0.5)。16x16 に縮めて WCAG の相対輝度を平均する。
+ * 時計はジャケットの中央、曲名は左下に乗るので全体の平均で判断する。
+ */
+private fun isBright(art: Bitmap): Boolean {
+    val small = Bitmap.createScaledBitmap(art, 16, 16, true)
+    var sum = 0.0
+    for (y in 0 until 16) for (x in 0 until 16) sum += ColorUtils.calculateLuminance(small.getPixel(x, y))
+    if (small !== art) small.recycle()
+    return sum / 256.0 > 0.5
+}
 private val AccentGreen = Color(0xFF57D98A)
 
 private val OverlayShadow = Shadow(
-    color = Color.Black.copy(alpha = 0.75f),
-    offset = Offset(0f, 3f),
-    blurRadius = 16f
+    color = Color.Black.copy(alpha = 0.45f),
+    offset = Offset(0f, 2f),
+    blurRadius = 14f
 )
 
-// 曲情報用: 小さい文字でも輪郭が立つ、近くて濃い影
+// 曲情報用: 小さい文字でも輪郭が立つ、近くて少し濃い影
 private val TrackShadow = Shadow(
-    color = Color.Black.copy(alpha = 0.9f),
-    offset = Offset(0f, 2f),
+    color = Color.Black.copy(alpha = 0.55f),
+    offset = Offset(0f, 1.5f),
     blurRadius = 8f
 )
 
@@ -138,9 +153,11 @@ private val PortraitLayout = Layout(
     trackStart = 24.dp, trackBottom = 40.dp, trackWidthFraction = 0.88f,
 )
 // リリックビデオ中: 歌詞が画面全体に出るので、時計は小さく左上、曲名は右上に寄せる
+// 横向き: 時計と曲名ブロックは画面の角に寄せる。パンチホールは左端の縦中央にあり、
+// 上端の時計とも下端の曲名ブロックとも重ならないので避けない(角の丸み 22dp より内側に置く)
 private val LandscapeLyricLayout = Layout(
     timeSize = 44.sp, dateSize = 14.sp, dateSpacing = 2.sp, batterySize = 13.sp,
-    trackStart = 36.dp, trackBottom = 18.dp, trackWidthFraction = 0.55f,
+    trackStart = 18.dp, trackBottom = 18.dp, trackWidthFraction = 0.55f,
     trackTitleSize = 20.sp, trackArtistSize = 15.sp, thumbSize = 64.dp,
 )
 private val PortraitLyricLayout = Layout(
@@ -232,24 +249,21 @@ fun StandbyScreen(
             )
         }
         if (lyricVideo != null && playing != null) {
-            // リリックビデオ中: 時計は左上(パンチホールは上端中央なので左に寄せれば隠れない)、
-            // 左下にジャケットのサムネイルとその横に曲名・アーティスト。
-            // 横向きではカットアウトが左右に来るのでその分だけ避ける
+            // リリックビデオ中: 時計は右上(パンチホールは上端中央なので右に寄せれば隠れない)、
+            // 左下にジャケットのサムネイルとその横に曲名・アーティスト。余白は角で揃える
             ClockOverlay(
                 now = now,
                 battery = battery,
                 layout = layout,
-                horizontalAlignment = Alignment.Start,
+                horizontalAlignment = Alignment.End,
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                    .padding(top = 20.dp, start = layout.trackStart)
+                    .align(Alignment.TopEnd)
+                    .padding(top = layout.trackBottom, end = layout.trackStart)
             )
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                     .padding(start = layout.trackStart, end = layout.trackStart, bottom = layout.trackBottom),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -270,16 +284,23 @@ fun StandbyScreen(
                 TrackInfo(playing = playing, layout = layout, fillRow = true, modifier = Modifier.weight(1f))
             }
         } else {
+            // スリットスキャン(またはジャケット無し): 影は付けず、ジャケットの明るさで文字を白か黒にする
+            val onArt = remember(art) { art?.let { if (isBright(it)) TextOnLight else TextPrimary } ?: TextPrimary }
+            val shadow = if (art != null) null else OverlayShadow
             ClockOverlay(
                 now = now,
                 battery = battery,
                 layout = layout,
+                color = onArt,
+                shadow = shadow,
                 modifier = Modifier.align(Alignment.Center)
             )
             playing?.let { p ->
                 TrackInfo(
                     playing = p,
                     layout = layout,
+                    color = onArt,
+                    shadow = if (art != null) null else TrackShadow,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(start = layout.trackStart, bottom = layout.trackBottom)
@@ -301,6 +322,8 @@ private fun TrackInfo(
     alignEnd: Boolean = false,
     /** true: 親(Row)が決めた幅をそのまま使う。false: 画面幅の trackWidthFraction */
     fillRow: Boolean = false,
+    color: Color = TextPrimary,
+    shadow: Shadow? = TrackShadow,
 ) {
     Column(
         modifier = if (fillRow) modifier else modifier.fillMaxWidth(layout.trackWidthFraction),
@@ -309,23 +332,23 @@ private fun TrackInfo(
         MarqueeText(
             text = playing.title.uppercase(Locale.ENGLISH),
             style = TextStyle(
-                color = TextPrimary,
+                color = color,
                 fontFamily = LabelFontFamily,
                 fontWeight = FontWeight.Medium,
                 fontSize = layout.trackTitleSize,
                 letterSpacing = 1.sp,
-                shadow = TrackShadow
+                shadow = shadow
             )
         )
         MarqueeText(
             text = playing.artist.uppercase(Locale.ENGLISH),
             style = TextStyle(
-                color = TextPrimary,
+                color = color,
                 fontFamily = LabelFontFamily,
                 fontWeight = FontWeight.Medium,
                 fontSize = layout.trackArtistSize,
                 letterSpacing = 1.sp,
-                shadow = TrackShadow
+                shadow = shadow
             )
         )
     }
@@ -461,6 +484,8 @@ private fun ClockOverlay(
     layout: Layout,
     modifier: Modifier = Modifier,
     horizontalAlignment: Alignment.Horizontal = Alignment.CenterHorizontally,
+    color: Color = TextPrimary,
+    shadow: Shadow? = OverlayShadow,
 ) {
     val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
     val dateFormatter = remember { DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH) }
@@ -469,11 +494,11 @@ private fun ClockOverlay(
         Text(
             text = now.format(timeFormatter),
             style = TextStyle(
-                color = TextPrimary,
+                color = color,
                 fontFamily = TimeFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = layout.timeSize,
-                shadow = OverlayShadow
+                shadow = shadow
             ),
             maxLines = 1,
             softWrap = false
@@ -481,22 +506,22 @@ private fun ClockOverlay(
         Text(
             text = now.format(dateFormatter).uppercase(Locale.ENGLISH),
             style = TextStyle(
-                color = TextPrimary.copy(alpha = 0.85f),
+                color = color.copy(alpha = 0.85f),
                 fontFamily = LabelFontFamily,
                 fontWeight = FontWeight.Medium,
                 fontSize = layout.dateSize,
                 letterSpacing = layout.dateSpacing,
-                shadow = OverlayShadow
+                shadow = shadow
             )
         )
         Text(
             text = if (battery.isCharging) "⚡ ${battery.level}%" else "${battery.level}%",
             style = TextStyle(
-                color = if (battery.isCharging) AccentGreen else TextPrimary.copy(alpha = 0.7f),
+                color = if (battery.isCharging) AccentGreen else color.copy(alpha = 0.7f),
                 fontFamily = LabelFontFamily,
                 fontWeight = FontWeight.Medium,
                 fontSize = layout.batterySize,
-                shadow = OverlayShadow
+                shadow = shadow
             ),
             modifier = Modifier.padding(top = 8.dp)
         )
