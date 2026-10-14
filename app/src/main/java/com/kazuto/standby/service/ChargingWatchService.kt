@@ -71,7 +71,8 @@ class ChargingWatchService : Service() {
                     maybeLaunch(delayMs = 500)
                 }
                 Intent.ACTION_SCREEN_ON -> stopOrientationWatch()
-                Intent.ACTION_POWER_DISCONNECTED -> stopOrientationWatch()
+                Intent.ACTION_POWER_DISCONNECTED ->
+                    if (!Prefs.triggerWithoutCharging(context)) stopOrientationWatch()
             }
         }
     }
@@ -236,12 +237,14 @@ class ChargingWatchService : Service() {
     }
 
     /**
-     * 起動対象の充電中なら true。既定は Qi(ワイヤレス)のみ、
-     * 設定で「ケーブルでも起動」にしていれば AC/USB でも true。
+     * 起動してよい電源状態なら true。既定は Qi(ワイヤレス)充電中のみ、
+     * 設定で「ケーブルでも起動」にしていれば AC/USB でも、
+     * 「充電していなくても表示」なら常に true。
      * BatteryManager.isCharging は満充電(status=FULL)で false になるので、
      * sticky な ACTION_BATTERY_CHANGED からプラグ状態を見る。
      */
     private fun isTriggerCharging(): Boolean {
+        if (Prefs.triggerWithoutCharging(this)) return true
         val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val plugged = battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
         if (plugged == BatteryManager.BATTERY_PLUGGED_WIRELESS) return true

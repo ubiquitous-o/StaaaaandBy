@@ -18,6 +18,8 @@
     <string name="prefs_title">好みの設定</string>
     <string name="pref_wired_title">ケーブル充電でも表示する</string>
     <string name="pref_wired_desc">オフ: ワイヤレス（Qi）充電のときだけ表示します。オン: USBケーブルでの充電でも表示します。</string>
+    <string name="pref_unplugged_title">充電していなくても表示する</string>
+    <string name="pref_unplugged_desc">オン: 画面を消すたびにスタンバイを表示し（縦向き設定がオフなら横向きのときだけ）、電源を抜いても閉じません。画面が点きっぱなしになるのでバッテリーを使います。サイドキーで抜けられます。</string>
     <string name="pref_portrait_title">縦向きでも表示する</string>
     <string name="pref_portrait_desc">オフ: 横向きに置いたときだけ表示します。オン: どの向きでも表示し、縦向きではジャケットを上から下へスリットスキャンします。</string>
 

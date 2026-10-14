@@ -86,6 +86,8 @@ class StandbyActivity : ComponentActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 Intent.ACTION_POWER_DISCONNECTED -> {
+                    // 「充電していなくても表示」なら電源が抜けても閉じない
+                    if (Prefs.triggerWithoutCharging(context)) return
                     // 満充電(100%)になると Samsung は Qi 充電器を約10秒周期で2秒ほど切って戻す
                     // (2026-09-27 実測)。1.5秒で閉じるとその穴にはまって閉じる→サービスが出し直す
                     // のちらつきになるので、満充電のときだけ長めに待つ

@@ -342,6 +342,7 @@ private fun PreferencesCard() {
     val context = LocalContext.current
     var triggerOnWired by remember { mutableStateOf(Prefs.triggerOnWired(context)) }
     var allowPortrait by remember { mutableStateOf(Prefs.allowPortrait(context)) }
+    var withoutCharging by remember { mutableStateOf(Prefs.triggerWithoutCharging(context)) }
     var lyricVideo by remember { mutableStateOf(Prefs.lyricVideo(context)) }
 
     Card(
@@ -366,6 +367,15 @@ private fun PreferencesCard() {
                 onCheckedChange = {
                     triggerOnWired = it
                     Prefs.setTriggerOnWired(context, it)
+                }
+            )
+            PreferenceSwitch(
+                title = stringResource(R.string.pref_unplugged_title),
+                description = stringResource(R.string.pref_unplugged_desc),
+                checked = withoutCharging,
+                onCheckedChange = {
+                    withoutCharging = it
+                    Prefs.setTriggerWithoutCharging(context, it)
                 }
             )
             PreferenceSwitch(

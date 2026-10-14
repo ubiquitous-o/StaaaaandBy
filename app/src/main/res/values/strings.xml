@@ -20,6 +20,8 @@
     <string name="prefs_title">Preferences</string>
     <string name="pref_wired_title">Also start on wired charging</string>
     <string name="pref_wired_desc">Off: only a wireless (Qi) charger brings up StaaaaandBy. On: a USB cable does too.</string>
+    <string name="pref_unplugged_title">Also start when not charging</string>
+    <string name="pref_unplugged_desc">On: StaaaaandBy appears whenever the screen turns off (lying sideways unless portrait is also on) and stays up after unplugging. The screen stays on, so this uses battery — press the side key to leave.</string>
     <string name="pref_portrait_title">Also start in portrait</string>
     <string name="pref_portrait_desc">Off: only when the phone is lying sideways. On: any orientation — in portrait, the artwork slit-scans from top to bottom.</string>
 

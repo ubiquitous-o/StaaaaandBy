@@ -42,7 +42,7 @@ Only tested on a Galaxy Z Flip 7 (One UI). Other OEMs (especially Xiaomi/OPPO) r
 3. Keep your music apps awake — see below
 4. Place the phone on a Qi charging pad, lying sideways. Pressing the side key to turn the screen off while charging also brings up the standby screen
 
-Preferences (bottom of the setup screen): **Also start on wired charging** (USB too, not just Qi) and **Also start in portrait** (any orientation, with a portrait layout).
+Preferences (bottom of the setup screen): **Also start on wired charging** (USB too, not just Qi), **Also start when not charging** (every screen-off brings StaaaaandBy up and unplugging does not close it — the screen stays on, so it costs battery; the side key leaves) and **Also start in portrait** (any orientation, with a portrait layout).
 
 Note: if the persistent service gets killed on Samsung devices, set Settings → Apps → StaaaaandBy → Battery → Unrestricted.
 

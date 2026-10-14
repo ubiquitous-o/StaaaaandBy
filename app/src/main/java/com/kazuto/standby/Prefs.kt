@@ -11,6 +11,7 @@ object Prefs {
     private const val FILE = "settings"
     private const val KEY_TRIGGER_ON_WIRED = "trigger_on_wired"
     private const val KEY_ALLOW_PORTRAIT = "allow_portrait"
+    private const val KEY_TRIGGER_WITHOUT_CHARGING = "trigger_without_charging"
     private const val KEY_LAST_MUSIC_APP = "last_music_app"
     private const val KEY_LAST_MUSIC_REMOTE = "last_music_remote"
     private const val KEY_LAST_REMOTE_TITLE = "last_remote_title"
@@ -31,6 +32,16 @@ object Prefs {
 
     fun setTriggerOnWired(context: Context, value: Boolean) =
         prefs(context).edit().putBoolean(KEY_TRIGGER_ON_WIRED, value).apply()
+
+    /**
+     * true: 充電していなくても画面オフで起動し、電源が抜けても閉じない。
+     * false(既定): 充電中(Qi、設定次第でケーブルも)だけ。
+     */
+    fun triggerWithoutCharging(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_TRIGGER_WITHOUT_CHARGING, false)
+
+    fun setTriggerWithoutCharging(context: Context, value: Boolean) =
+        prefs(context).edit().putBoolean(KEY_TRIGGER_WITHOUT_CHARGING, value).apply()
 
     /** true: 縦向きでも起動し、縦用UIで表示する。false(既定): 横向きのときだけ。 */
     fun allowPortrait(context: Context): Boolean =
