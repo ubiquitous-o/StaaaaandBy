@@ -17,8 +17,8 @@
     // Parts (by group) that must never be used: the planner and the random look both ask
     // J.randomOk before enabling a part, so refusing here removes them everywhere.
     const EXCLUDED_PARTS = {
-        // カチンコ, カセット, 駅名標, カレンダー, 路線図, ポラロイド, 障子, 掛け軸, かるた札, 目次, 値札(「お買い得」)
-        layout: new Set(['clapper', 'cassette', 'stationSign', 'calendar', 'routeMap', 'polaroid', 'shoji', 'kakejiku', 'karuta', 'contents', 'priceTag']),
+        // カチンコ, カセット, 駅名標, カレンダー, 路線図, ポラロイド, 障子, 掛け軸, かるた札, 目次, 値札(「お買い得」), 警告ラベル(「注意」「NOTICE」)
+        layout: new Set(['clapper', 'cassette', 'stationSign', 'calendar', 'routeMap', 'polaroid', 'shoji', 'kakejiku', 'karuta', 'contents', 'priceTag', 'warningLabel']),
     };
     const baseRandomOk = J.randomOk;
     J.randomOk = (project, g, k) => {
